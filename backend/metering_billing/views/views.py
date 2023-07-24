@@ -67,7 +67,6 @@ class PeriodMetricRevenueView(APIView):
         serializer.is_valid(raise_exception=True)
         start = date_as_min_dt(serializer.validated_data["start_date"], timezone)
         end = date_as_max_dt(serializer.validated_data["end_date"], timezone)
-        return_dict = {}
         # collected
         collected = Invoice.objects.filter(
             organization=organization,
@@ -75,7 +74,7 @@ class PeriodMetricRevenueView(APIView):
             issue_date__lte=end,
             payment_status=Invoice.PaymentStatus.PAID,
         ).aggregate(tot=Sum("amount"))["tot"]
-        return_dict["total_revenue"] = collected or Decimal(0)
+        return_dict = {"total_revenue": collected or Decimal(0)}
         # earned
         subs = (
             SubscriptionRecord.objects.filter(
@@ -105,7 +104,7 @@ class PeriodMetricRevenueView(APIView):
                 if date in per_day_dict:
                     per_day_dict[date]["revenue"] += earned_revenue
         return_dict["earned_revenue"] = sum(
-            [x["revenue"] for x in per_day_dict.values()]
+            x["revenue"] for x in per_day_dict.values()
         )
         serializer = PeriodMetricRevenueResponseSerializer(data=return_dict)
         serializer.is_valid(raise_exception=True)
@@ -209,7 +208,7 @@ class PeriodSubscriptionsView(APIView):
                     seen_dict[sub["customer_name"]] = sub["new"]
             return_dict[f"period_{i+1}_total_subscriptions"] = len(seen_dict)
             return_dict[f"period_{i+1}_new_subscriptions"] = sum(
-                [1 for k, v in seen_dict.items() if v]
+                1 for k, v in seen_dict.items() if v
             )
         serializer = PeriodSubscriptionsResponseSerializer(data=return_dict)
         serializer.is_valid(raise_exception=True)
@@ -424,7 +423,7 @@ class ImportPaymentObjectsView(APIView):
             num = connector.import_payment_objects(organization)
         except Exception as e:
             raise ExternalConnectionFailure(f"Error importing payment objects: {e}")
-        num = sum([len(v) for v in num.values()])
+        num = sum(len(v) for v in num.values())
         return Response(
             {
                 "status": "success",
@@ -654,7 +653,7 @@ class PlansByNumCustomersView(APIView):
             .annotate(num_customers=Count("customer"))
             .order_by("-num_customers")
         )
-        tot_plans = sum([plan["num_customers"] for plan in plans])
+        tot_plans = sum(plan["num_customers"] for plan in plans)
         plans = [
             {**plan, "percent_total": plan["num_customers"] / tot_plans}
             for plan in plans

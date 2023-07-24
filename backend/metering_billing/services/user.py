@@ -58,8 +58,8 @@ class UserService:
             return False
 
         token = default_token_generator.make_token(user)
-        path = "set-new-password?token=%s&userId=%s" % (token, user.id)
-        password_reset_url = "%s/%s" % (settings.APP_URL, path)
+        path = f"set-new-password?token={token}&userId={user.id}"
+        password_reset_url = f"{settings.APP_URL}/{path}"
 
         self.send_reset_password_email(reset_url=password_reset_url, to=email)
 

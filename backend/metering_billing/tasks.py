@@ -73,7 +73,7 @@ def generate_invoice_pdf_async(invoice_pk):
         pdf_url_dict = get_invoice_presigned_url(invoice)
         pdf_url = pdf_url_dict.get("url")
     except Exception as e:
-        logger.error("RAN INTO ERROR GENERATING PDF: {}".format(e))
+        logger.error(f"RAN INTO ERROR GENERATING PDF: {e}")
         pdf_url = None
 
     invoice.invoice_pdf = pdf_url
@@ -136,9 +136,7 @@ def calculate_invoice_inner():
             now = now_utc()
         except Exception as e:
             logger.error(
-                "Error generating invoice for subscription records {}. Error was {}".format(
-                    [str(x) for x in customer_subscription_records], e
-                )
+                f"Error generating invoice for subscription records {[str(x) for x in customer_subscription_records]}. Error was {e}"
             )
             continue
         # delete draft invoices
@@ -349,9 +347,10 @@ def run_backtest(backtest_id):
             cum_rev_dict_list = []
             cum_rev = inner_results.pop("cumulative_revenue")
             cum_rev_lst = sorted(cum_rev.items(), key=lambda x: x[0], reverse=True)
-            date_cumrev_list = []
-            for date, cum_rev_dict in cum_rev_lst:
-                date_cumrev_list.append((date.date(), cum_rev_dict))
+            date_cumrev_list = [
+                (date.date(), cum_rev_dict)
+                for date, cum_rev_dict in cum_rev_lst
+            ]
             cum_rev_lst = date_cumrev_list
             try:
                 every_date = list(
@@ -391,22 +390,22 @@ def run_backtest(backtest_id):
                 for metric_name, rev_dict in metric_rev.items()
             ]
             inner_results["revenue_by_metric"] = metric_rev
-            # change top customers to be in frontend format
-            top_cust_dict = {}
             top_cust = inner_results.pop("top_customers")
             top_original = sorted(
                 top_cust.items(),
                 key=lambda x: x[1]["original_plan_revenue"],
                 reverse=True,
             )[:5]
-            top_cust_dict["original_plan_revenue"] = [
-                {
-                    "customer_id": customer.customer_id,
-                    "customer_name": customer.customer_name,
-                    "value": rev_dict.get("original_plan_revenue", 0),
-                }
-                for customer, rev_dict in top_original
-            ]
+            top_cust_dict = {
+                "original_plan_revenue": [
+                    {
+                        "customer_id": customer.customer_id,
+                        "customer_name": customer.customer_name,
+                        "value": rev_dict.get("original_plan_revenue", 0),
+                    }
+                    for customer, rev_dict in top_original
+                ]
+            }
             top_new = sorted(
                 top_cust.items(), key=lambda x: x[1]["new_plan_revenue"], reverse=True
             )[:5]
@@ -522,9 +521,7 @@ def import_customers_from_payment_processor_inner(payment_processor, organizatio
 
     organization = Organization.objects.get(pk=organization_pk)
     connector = PAYMENT_PROCESSOR_MAP[payment_processor]
-    n = connector.import_customers(organization)
-
-    return n
+    return connector.import_customers(organization)
 
 
 @shared_task

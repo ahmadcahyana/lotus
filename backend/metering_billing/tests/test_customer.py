@@ -146,7 +146,7 @@ class TestGetCustomers:
 
 @pytest.fixture
 def insert_customer_payload():
-    payload = {
+    return {
         "customer_name": "test_customer",
         "customer_id": "test_customer_id",
         "email": "test@test.com",
@@ -154,7 +154,6 @@ def insert_customer_payload():
         # "payment_provider": "stripe",
         # "properties": {},
     }
-    return payload
 
 
 @pytest.mark.django_db(transaction=True)

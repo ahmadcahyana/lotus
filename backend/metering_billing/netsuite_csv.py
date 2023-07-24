@@ -29,8 +29,7 @@ CSV_FOLDER = "invoice_csvs"
 
 def get_key(organization, csv_folder, csv_filename):
     organization_id = organization.organization_id.hex
-    key = f"{organization_id}/{csv_folder}/{csv_filename}.csv"
-    return key
+    return f"{organization_id}/{csv_folder}/{csv_filename}.csv"
 
 
 def generate_invoices_csv(organization, start_date=None, end_date=None):
@@ -71,24 +70,18 @@ def generate_invoices_csv(organization, start_date=None, end_date=None):
     )
 
     for invoice in invoices:
-        externalId = invoice.invoice_number
         entity = invoice.customer.customer_id
         terms = None
         tranDate = invoice.issue_date.strftime("%m/%d/%Y")
         postingPeriod = invoice.issue_date.strftime("%B %Y")
         dueDate = invoice.due_date.strftime("%m/%d/%Y") if invoice.due_date else None
         currency = invoice.currency.code
+        externalId = invoice.invoice_number
         for line_item in invoice.line_items.all():
             if line_item.associated_recurring_charge:
-                item = (
-                    "recurring_charge_"
-                    + line_item.associated_recurring_charge.recurring_charge_id.hex
-                )
+                item = f"recurring_charge_{line_item.associated_recurring_charge.recurring_charge_id.hex}"
             elif line_item.associated_plan_component:
-                item = (
-                    "usage_component_"
-                    + line_item.associated_plan_component.usage_component_id.hex
-                )
+                item = f"usage_component_{line_item.associated_plan_component.usage_component_id.hex}"
             else:
                 item = line_item.name
             description = line_item.name
@@ -120,30 +113,31 @@ def generate_invoices_csv(organization, start_date=None, end_date=None):
 def upload_csv(organization, csv_buffer, csv_folder, csv_filename):
     # If the organization is not an external demo organization
     if (
-        not settings.DEBUG
-        and organization.organization_type
-        != Organization.OrganizationType.EXTERNAL_DEMO
+        settings.DEBUG
+        or organization.organization_type
+        == Organization.OrganizationType.EXTERNAL_DEMO
     ):
-        try:
-            # Upload the file to s3
-            bucket_name, prod = get_bucket_name(organization)
-            if s3_bucket_exists(bucket_name):
-                logger.error("Bucket exists")
-            else:
-                s3.create_bucket(Bucket=bucket_name, ACL="private")
-                logger.error("Created bucket", bucket_name)
+        return
+    try:
+        # Upload the file to s3
+        bucket_name, prod = get_bucket_name(organization)
+        if s3_bucket_exists(bucket_name):
+            logger.error("Bucket exists")
+        else:
+            s3.create_bucket(Bucket=bucket_name, ACL="private")
+            logger.error("Created bucket", bucket_name)
 
-            key = get_key(organization, csv_folder, csv_filename)
-            if not prod:
-                team_id = organization.team.team_id.hex
-                team = organization.team
-                team_id = team.team_id.hex + "-" + slugify(team.name)
-                key = f"{team_id}/{key}"
-            csv_bytes = csv_buffer.getvalue().encode()
-            s3.Bucket(bucket_name).upload_fileobj(io.BytesIO(csv_bytes), key)
+        key = get_key(organization, csv_folder, csv_filename)
+        if not prod:
+            team_id = organization.team.team_id.hex
+            team = organization.team
+            team_id = f"{team.team_id.hex}-{slugify(team.name)}"
+            key = f"{team_id}/{key}"
+        csv_bytes = csv_buffer.getvalue().encode()
+        s3.Bucket(bucket_name).upload_fileobj(io.BytesIO(csv_bytes), key)
 
-        except Exception as e:
-            print(e)
+    except Exception as e:
+        print(e)
 
 
 def get_invoices_csv_presigned_url(organization, start_date=None, end_date=None):
@@ -154,7 +148,7 @@ def get_invoices_csv_presigned_url(organization, start_date=None, end_date=None)
     if not prod:
         team_id = organization.team.team_id.hex
         team = organization.team
-        team_id = team.team_id.hex + "-" + slugify(team.name)
+        team_id = f"{team.team_id.hex}-{slugify(team.name)}"
         key = f"{team_id}/{key}"
     # if its an external demo, or we're in debug mode, don't generate these
     if (
@@ -181,19 +175,18 @@ def get_csv_filename(organization, start_date, end_date):
     if start_date is not None and end_date is not None:
         start_date_str = datetime.datetime.strftime(start_date, "%y%m%d")
         end_date_str = datetime.datetime.strftime(end_date, "%y%m%d")
-        csv_filename = f"{start_date_str}-{end_date_str}"
+        return f"{start_date_str}-{end_date_str}"
     elif start_date is not None:
         now = now_utc().astimezone(organization.timezone)
         start_date_str = datetime.datetime.strftime(start_date, "%y%m%d")
         now_str = datetime.datetime.strftime(now, "%y%m%d")
-        csv_filename = f"{start_date_str}-{now_str}"
+        return f"{start_date_str}-{now_str}"
     elif end_date is not None:
         end_date_str = (
             datetime.datetime.strftime(end_date, "%y%m%d") if end_date else ""
         )
-        csv_filename = f"start-{end_date_str}"
+        return f"start-{end_date_str}"
     else:
         now = now_utc().astimezone(organization.timezone)
         now_str = datetime.datetime.strftime(now, "%y%m%d")
-        csv_filename = f"start-{now_str}"
-    return csv_filename
+        return f"start-{now_str}"

@@ -48,7 +48,7 @@ class Command(BaseCommand):
         # plan
         customer = Customer.objects.create(
             organization=organization,
-            customer_name="BigCompany " + str(uuid.uuid4().hex)[:6],
+            customer_name=f"BigCompany {str(uuid.uuid4().hex)[:6]}",
             email=f"{str(uuid.uuid4().hex)}@{str(uuid.uuid4().hex)}.com",
         )
         metrics_map = {}

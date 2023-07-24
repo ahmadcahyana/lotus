@@ -61,9 +61,6 @@ class PaymentProcesorView(APIView):
         data_serializer.is_valid(raise_exception=True)
         data = data_serializer.validated_data
 
-        # call payment processor specific post method
-        response = PAYMENT_PROCESSOR_MAP[payment_processor_name].handle_post(
+        return PAYMENT_PROCESSOR_MAP[payment_processor_name].handle_post(
             data, organization
         )
-
-        return response

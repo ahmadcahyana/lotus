@@ -56,25 +56,24 @@ class TimezoneFieldMixin:
     def get_timezone(self, instance):
         from metering_billing.models import Customer
 
-        serializer_context = self.context
         customer_id = getattr(instance, "customer_id", None)
-        if customer_id is not None:
-            if "tz_customer_cache" not in serializer_context:
-                serializer_context["tz_customer_cache"] = {}
-            tz_customer_cache = serializer_context["tz_customer_cache"]
-            if customer_id in tz_customer_cache:
-                tz_string = tz_customer_cache[customer_id]
-            else:
-                customer_cache_key = f"tz_customer_{customer_id}"
-                tz_string = cache.get(customer_cache_key)
-                if tz_string is None:
-                    customer_tz = Customer.objects.get(id=customer_id).timezone
-                    tz_string = customer_tz.zone
-                    cache.set(customer_cache_key, tz_string, 60 * 60 * 24 * 7)
-                tz_customer_cache[customer_id] = tz_string
-            return pytz.timezone(tz_string)
-        else:
+        if customer_id is None:
             return self.get_organization_timezone(instance.organization_id)
+        serializer_context = self.context
+        if "tz_customer_cache" not in serializer_context:
+            serializer_context["tz_customer_cache"] = {}
+        tz_customer_cache = serializer_context["tz_customer_cache"]
+        if customer_id in tz_customer_cache:
+            tz_string = tz_customer_cache[customer_id]
+        else:
+            customer_cache_key = f"tz_customer_{customer_id}"
+            tz_string = cache.get(customer_cache_key)
+            if tz_string is None:
+                customer_tz = Customer.objects.get(id=customer_id).timezone
+                tz_string = customer_tz.zone
+                cache.set(customer_cache_key, tz_string, 60 * 60 * 24 * 7)
+            tz_customer_cache[customer_id] = tz_string
+        return pytz.timezone(tz_string)
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
@@ -95,7 +94,7 @@ class DjangoJSONEncoder(DjangoJSONEncoder):
         if isinstance(obj, datetime.datetime):
             r = obj.isoformat()
             if r.endswith("+00:00"):
-                r = r[:-6] + "Z"
+                r = f"{r[:-6]}Z"
             return r
         return super(DjangoJSONEncoder, self).default(obj)
 
@@ -104,8 +103,7 @@ class SlugRelatedFieldWithOrganization(serializers.SlugRelatedField):
     def get_queryset(self):
         queryset = self.queryset
         org = self.context.get("organization", None)
-        queryset = queryset.filter(organization=org)
-        return queryset
+        return queryset.filter(organization=org)
 
     def to_internal_value(self, data):
         from metering_billing.models import (
@@ -165,7 +163,7 @@ class SlugRelatedFieldWithOrganization(serializers.SlugRelatedField):
             return MetricUUIDField().to_representation(obj.metric_id)
         elif isinstance(obj, Plan) and obj.addon_spec is None:
             return PlanUUIDField().to_representation(obj.plan_id)
-        elif isinstance(obj, Plan) and obj.addon_spec is not None:
+        elif isinstance(obj, Plan):
             return AddOnUUIDField().to_representation(obj.plan_id)
         elif isinstance(obj, PlanVersion):
             return PlanVersionUUIDField().to_representation(obj.version_id)
@@ -191,8 +189,7 @@ class SlugRelatedFieldWithOrganizationPK(SlugRelatedFieldWithOrganization):
     def get_queryset(self):
         queryset = self.queryset
         org = self.context.get("organization_pk", None)
-        queryset = queryset.filter(organization_id=org)
-        return queryset
+        return queryset.filter(organization_id=org)
 
 
 class EmailSerializer(serializers.Serializer):
@@ -211,9 +208,7 @@ class UUIDPrefixField(serializers.UUIDField):
     def to_internal_value(self, data) -> uuid.UUID:
         if not isinstance(data, (str, uuid.UUID)):
             raise ValidationError(
-                "Input must be a string beginning with the prefix {} and followed by the compact hex representation of the UUID, not including hyphens.".format(
-                    self.prefix
-                )
+                f"Input must be a string beginning with the prefix {self.prefix} and followed by the compact hex representation of the UUID, not including hyphens."
             )
         if isinstance(data, str):
             data = data.replace("-", "")
@@ -222,9 +217,7 @@ class UUIDPrefixField(serializers.UUIDField):
                 data = uuid.UUID(data)
             except ValueError:
                 raise ValidationError(
-                    "Input must be a string beginning with the prefix {} and followed by the compact hex representation of the UUID, not including hyphens.".format(
-                        self.prefix
-                    )
+                    f"Input must be a string beginning with the prefix {self.prefix} and followed by the compact hex representation of the UUID, not including hyphens."
                 )
         data = super().to_internal_value(data)
         return data

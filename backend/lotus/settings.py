@@ -9,6 +9,7 @@ https://docs.djangoproject.com/en/4.0/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.0/ref/settings/
 """
+
 import datetime
 import logging
 import os
@@ -118,10 +119,7 @@ USE_WEBHOOKS = not config("NO_WEBHOOKS", default=False, cast=bool)
 USE_KAFKA = not config("NO_EVENTS", default=False, cast=bool)
 
 if SENTRY_DSN != "":
-    if not DEBUG:
-        trace_rate = 1.0
-    else:
-        trace_rate = 0.1
+    trace_rate = 1.0 if not DEBUG else 0.1
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         integrations=[
@@ -152,16 +150,15 @@ posthog.host = "https://app.posthog.com"
 
 if not PRODUCT_ANALYTICS_OPT_IN or DEBUG:
     posthog.disabled = True
-POSTHOG_PERSON = "self_hosted_" + str(hash(SECRET_KEY)) if SELF_HOSTED else None
+POSTHOG_PERSON = f"self_hosted_{hash(SECRET_KEY)}" if SELF_HOSTED else None
 
-if DEBUG or SELF_HOSTED:
-    ALLOWED_HOSTS = ["*"]
-else:
-    ALLOWED_HOSTS = [
+ALLOWED_HOSTS = (
+    ["*"]
+    if DEBUG or SELF_HOSTED
+    else [
         "*uselotus.io",
     ]
-
-
+)
 # Application definition
 
 INSTALLED_APPS = [
@@ -528,8 +525,6 @@ if DOCKERIZED:
             "tried to get frontend container ip but failed, current internal ips:",
             INTERNAL_IPS,
         )
-        pass
-
 VITE_APP_DIR = BASE_DIR / "src"
 
 
@@ -712,33 +707,29 @@ META = LOTUS_API_KEY and LOTUS_HOST
 django_heroku.settings(locals(), logging=False)
 
 # create svix events
-if USE_WEBHOOKS:
-    if SVIX_API_KEY != "":
-        svix = Svix(SVIX_API_KEY)
-    elif SVIX_API_KEY == "" and SVIX_JWT_SECRET != "":
-        try:
-            dt = datetime.datetime.now(timezone.utc)
-            utc_time = dt.replace(tzinfo=timezone.utc)
-            utc_timestamp = utc_time.timestamp()
-            payload = {
-                "iat": utc_timestamp,
-                "exp": 2980500639,
-                "nbf": utc_timestamp,
-                "iss": "svix-server",
-                "sub": "org_23rb8YdGqMT0qIzpgGwdXfHirMu",
-            }
-            encoded = jwt.encode(payload, SVIX_JWT_SECRET, algorithm="HS256")
-            SVIX_API_KEY = encoded
-            hostname, _, ips = socket.gethostbyname_ex("svix-server")
-            svix = Svix(SVIX_API_KEY, SvixOptions(server_url=f"http://{ips[0]}:8071"))
-        except Exception:
-            logger.error("Error creating svix connector")
-            svix = None
-    else:
+if USE_WEBHOOKS and SVIX_API_KEY != "":
+    svix = Svix(SVIX_API_KEY)
+elif USE_WEBHOOKS and SVIX_JWT_SECRET != "":
+    try:
+        dt = datetime.datetime.now(timezone.utc)
+        utc_time = dt.replace(tzinfo=timezone.utc)
+        utc_timestamp = utc_time.timestamp()
+        payload = {
+            "iat": utc_timestamp,
+            "exp": 2980500639,
+            "nbf": utc_timestamp,
+            "iss": "svix-server",
+            "sub": "org_23rb8YdGqMT0qIzpgGwdXfHirMu",
+        }
+        encoded = jwt.encode(payload, SVIX_JWT_SECRET, algorithm="HS256")
+        SVIX_API_KEY = encoded
+        hostname, _, ips = socket.gethostbyname_ex("svix-server")
+        svix = Svix(SVIX_API_KEY, SvixOptions(server_url=f"http://{ips[0]}:8071"))
+    except Exception:
+        logger.error("Error creating svix connector")
         svix = None
 else:
     svix = None
-
 SVIX_CONNECTOR = svix
 if SVIX_CONNECTOR is not None:
     try:

@@ -32,7 +32,7 @@ def print_prefetch_counts(queryset, prefix=""):
         if hasattr(obj, "_prefetched_objects_cache"):
             for prefetch_key, prefetched_objs in obj._prefetched_objects_cache.items():
                 print(f"{prefix} - {prefetch_key}: {prefetched_objs.all().count()}")
-                print_prefetch_counts(prefetched_objs.all(), prefix=prefix + "    ")
+                print_prefetch_counts(prefetched_objs.all(), prefix=f"{prefix}    ")
 
 
 def make_hashable(obj):
@@ -217,10 +217,10 @@ def periods_bwn_twodates(
         elif granularity == METRIC_GRANULARITY.HOUR:
             normalize_rd = relativedelta(minute=0, second=0, microsecond=0)
             rd = relativedelta(hours=+1)
-        elif (
-            granularity == USAGE_CALC_GRANULARITY.DAILY
-            or granularity == METRIC_GRANULARITY.DAY
-        ):
+        elif granularity in [
+            USAGE_CALC_GRANULARITY.DAILY,
+            METRIC_GRANULARITY.DAY,
+        ]:
             normalize_rd = relativedelta(hour=0, minute=0, second=0, microsecond=0)
             rd = relativedelta(days=+1)
         elif granularity == METRIC_GRANULARITY.MONTH:
@@ -360,7 +360,7 @@ def calculate_end_date(
                     start_date + relativedelta(months=2, day=day_anchor, days=-1),
                     timezone,
                 )
-        elif day_anchor and month_anchor:
+        elif day_anchor:
             end_date = date_as_max_dt(
                 start_date + relativedelta(month=month_anchor, day=day_anchor, days=-1),
                 timezone,
@@ -385,14 +385,14 @@ def calculate_end_date(
                 old_end_date = end_date
                 rd = relativedelta(end_date, old_end_date)
                 i = 0
-                while not (rd.months % 3 == 0 and rd.months > 0):
+                while rd.months % 3 != 0 or rd.months <= 0:
                     end_date = date_as_max_dt(
                         start_date + relativedelta(months=i, day=day_anchor, days=-1),
                         timezone,
                     )
                     rd = relativedelta(end_date, old_end_date)
                     i += 1
-        elif month_anchor and not day_anchor:
+        elif month_anchor:
             end_date = date_as_max_dt(
                 start_date + relativedelta(month=month_anchor, days=-1), timezone
             )
@@ -435,7 +435,7 @@ def calculate_end_date(
                     start_date + relativedelta(months=11, day=day_anchor, days=-1),
                     timezone,
                 )
-        elif day_anchor and month_anchor:
+        elif day_anchor:
             end_date = date_as_max_dt(
                 start_date
                 + relativedelta(years=1, month=month_anchor, day=day_anchor, days=-1),
@@ -451,7 +451,7 @@ def calculate_end_date(
                 or rd.microseconds > 0
             ):
                 end_date = end_date + relativedelta(years=-1)
-        elif month_anchor and not day_anchor:
+        elif month_anchor:
             end_date = date_as_max_dt(
                 start_date + relativedelta(years=1, month=month_anchor, days=-1),
                 timezone,
@@ -470,75 +470,75 @@ def calculate_end_date(
 
 
 def event_uuid():
-    return "event_" + str(uuid.uuid4().hex)
+    return f"event_{str(uuid.uuid4().hex)}"
 
 
 def product_uuid():
-    return "prod_" + str(uuid.uuid4().hex)
+    return f"prod_{str(uuid.uuid4().hex)}"
 
 
 def customer_uuid():
-    return "cust_" + str(uuid.uuid4().hex)
+    return f"cust_{str(uuid.uuid4().hex)}"
 
 
 def metric_uuid():
-    return "metric_" + str(uuid.uuid4().hex)
+    return f"metric_{str(uuid.uuid4().hex)}"
 
 
 def plan_version_uuid():
-    return "plnvrs_" + str(uuid.uuid4().hex)
+    return f"plnvrs_{str(uuid.uuid4().hex)}"
 
 
 def plan_uuid():
-    return "plan_" + str(uuid.uuid4().hex)
+    return f"plan_{str(uuid.uuid4().hex)}"
 
 
 def subscription_uuid():
-    return "subs_" + str(uuid.uuid4().hex)
+    return f"subs_{str(uuid.uuid4().hex)}"
 
 
 def subscription_record_uuid():
-    return "subsrec_" + str(uuid.uuid4().hex)
+    return f"subsrec_{str(uuid.uuid4().hex)}"
 
 
 def backtest_uuid():
-    return "btst_" + str(uuid.uuid4().hex)
+    return f"btst_{str(uuid.uuid4().hex)}"
 
 
 def invoice_uuid():
-    return "inv_" + str(uuid.uuid4().hex)
+    return f"inv_{str(uuid.uuid4().hex)}"
 
 
 def organization_uuid():
-    return "org_" + str(uuid.uuid4().hex)
+    return f"org_{str(uuid.uuid4().hex)}"
 
 
 def webhook_secret_uuid():
-    return "whsec_" + str(uuid.uuid4().hex)
+    return f"whsec_{str(uuid.uuid4().hex)}"
 
 
 def webhook_endpoint_uuid():
-    return "whend_" + str(uuid.uuid4().hex)
+    return f"whend_{str(uuid.uuid4().hex)}"
 
 
 def customer_balance_adjustment_uuid():
-    return "custbaladj_" + str(uuid.uuid4().hex)
+    return f"custbaladj_{str(uuid.uuid4().hex)}"
 
 
 def addon_uuid():
-    return "addon_" + str(uuid.uuid4().hex)
+    return f"addon_{str(uuid.uuid4().hex)}"
 
 
 def addon_version_uuid():
-    return "addon_vrs_" + str(uuid.uuid4().hex)
+    return f"addon_vrs_{str(uuid.uuid4().hex)}"
 
 
 def addon_sr_uuid():
-    return "addon_subscription_" + str(uuid.uuid4().hex)
+    return f"addon_subscription_{str(uuid.uuid4().hex)}"
 
 
 def usage_alert_uuid():
-    return "usgalert_" + str(uuid.uuid4().hex)
+    return f"usgalert_{str(uuid.uuid4().hex)}"
 
 
 def random_uuid():

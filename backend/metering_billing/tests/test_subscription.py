@@ -1291,7 +1291,8 @@ class TestResetAndInvoicingIntervals:
         metric_in_new = setup_dict["metrics"][2]
         assert response.status_code == status.HTTP_200_OK
         assert (
-            response.data["subscription_id"] != "sub_" + sub.subscription_record_id.hex
+            response.data["subscription_id"]
+            != f"sub_{sub.subscription_record_id.hex}"
         )
         new_sub = SubscriptionRecord.objects.get(
             subscription_record_id=response.data["subscription_id"].replace("sub_", "")
@@ -1305,7 +1306,7 @@ class TestResetAndInvoicingIntervals:
             component__billable_metric=metric_in_both
         )
         assert 22 <= billing_records_in_both.count() <= 25
-        assert len(set(x.subscription_id for x in billing_records_in_both)) == 2
+        assert len({x.subscription_id for x in billing_records_in_both}) == 2
         assert (
             len([x for x in billing_records_in_both if x.subscription_id == sub.id])
             == 3
@@ -1533,7 +1534,7 @@ class TestPrepaidComponentCharges:
             "version_id": billing_plan.version_id,
             "component_fixed_charges_initial_units": [
                 {
-                    "metric_id": "metric_" + pc.billable_metric.metric_id.hex,
+                    "metric_id": f"metric_{pc.billable_metric.metric_id.hex}",
                     "units": 15,
                 }
             ],
@@ -1619,7 +1620,7 @@ class TestPrepaidComponentCharges:
             "version_id": billing_plan.version_id,
             "component_fixed_charges_initial_units": [
                 {
-                    "metric_id": "metric_" + pc.billable_metric.metric_id.hex,
+                    "metric_id": f"metric_{pc.billable_metric.metric_id.hex}",
                     "units": 15,
                 }
             ],
@@ -1713,7 +1714,7 @@ class TestPrepaidComponentCharges:
             "version_id": billing_plan.version_id,
             "component_fixed_charges_initial_units": [
                 {
-                    "metric_id": "metric_" + pc.billable_metric.metric_id.hex,
+                    "metric_id": f"metric_{pc.billable_metric.metric_id.hex}",
                     "units": 15,
                 }
             ],
@@ -1854,7 +1855,7 @@ class TestPrepaidComponentCharges:
             "version_id": billing_plan.version_id,
             "component_fixed_charges_initial_units": [
                 {
-                    "metric_id": "metric_" + pc.billable_metric.metric_id.hex,
+                    "metric_id": f"metric_{pc.billable_metric.metric_id.hex}",
                     "units": 15,
                 }
             ],
@@ -1995,7 +1996,7 @@ class TestPrepaidComponentCharges:
             "version_id": billing_plan.version_id,
             "component_fixed_charges_initial_units": [
                 {
-                    "metric_id": "metric_" + pc.billable_metric.metric_id.hex,
+                    "metric_id": f"metric_{pc.billable_metric.metric_id.hex}",
                     "units": 15,
                 }
             ],
@@ -2139,7 +2140,7 @@ class TestPrepaidComponentCharges:
             "version_id": billing_plan.version_id,
             "component_fixed_charges_initial_units": [
                 {
-                    "metric_id": "metric_" + pc.billable_metric.metric_id.hex,
+                    "metric_id": f"metric_{pc.billable_metric.metric_id.hex}",
                     "units": 15,
                 }
             ],

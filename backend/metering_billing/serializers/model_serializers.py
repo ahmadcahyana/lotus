@@ -79,10 +79,10 @@ class TagSerializer(TimezoneFieldMixin, serializers.ModelSerializer):
         }
 
     def validate(self, data):
-        match = re.search(r"^#(?:[0-9a-fA-F]{3}){1,2}$", data["tag_hex"])
-        if not match:
+        if match := re.search(r"^#(?:[0-9a-fA-F]{3}){1,2}$", data["tag_hex"]):
+            return data
+        else:
             raise serializers.ValidationError("Invalid hex code")
-        return data
 
 
 class OrganizationUserSerializer(TimezoneFieldMixin, serializers.ModelSerializer):
@@ -118,11 +118,10 @@ class PricingUnitDetailSerializer(api_serializers.PricingUnitSerializer):
 
     def validate(self, attrs):
         super().validate(attrs)
-        code_exists = PricingUnit.objects.filter(
+        if code_exists := PricingUnit.objects.filter(
             Q(organization=self.context["organization"]),
             code=attrs["code"],
-        ).exists()
-        if code_exists:
+        ).exists():
             raise serializers.ValidationError("Pricing unit code already exists")
         return attrs
 
@@ -236,18 +235,13 @@ class OrganizationSerializer(TimezoneFieldMixin, serializers.ModelSerializer):
 
     def get_team_name(self, obj) -> str:
         team = obj.team
-        if team is None:
-            return obj.organization_name
-        return team.name
+        return obj.organization_name if team is None else team.name
 
     def get_address(
         self, obj
     ) -> api_serializers.AddressSerializer(allow_null=True, required=False):
         d = obj.get_address()
-        if d is None:
-            return None
-        else:
-            return api_serializers.AddressSerializer(d).data
+        return None if d is None else api_serializers.AddressSerializer(d).data
 
     def get_current_user(self, obj) -> LightweightUserSerializer():
         user = self.context.get("user")
@@ -257,10 +251,7 @@ class OrganizationSerializer(TimezoneFieldMixin, serializers.ModelSerializer):
         self, obj
     ) -> LightweightOrganizationSerializer(many=True):
         team = obj.team
-        if team is None:
-            linked = [obj]
-        else:
-            linked = team.organizations.all()
+        linked = [obj] if team is None else team.organizations.all()
         return LightweightOrganizationSerializer(
             linked, many=True, context={"organization": obj}
         ).data
@@ -322,13 +313,12 @@ class OrganizationCreateSerializer(TimezoneFieldMixin, serializers.ModelSerializ
     def create(self, validated_data):
         existing_organization = self.context["organization"]
         team = existing_organization.team
-        organization = Organization.objects.create(
+        return Organization.objects.create(
             organization_name=validated_data["organization_name"],
             default_currency=validated_data.get("default_currency", None),
             organization_type=validated_data["organization_type"],
             team=team,
         )
-        return organization
 
 
 class APITokenSerializer(TimezoneFieldMixin, serializers.ModelSerializer):
@@ -436,8 +426,7 @@ class OrganizationUpdateSerializer(TimezoneFieldMixin, serializers.ModelSerializ
             raise serializers.ValidationError(
                 "If payment_provider is specified, payment_provider_id must be specified."
             )
-        tax_providers = attrs.get("tax_providers")
-        if tax_providers:
+        if tax_providers := attrs.get("tax_providers"):
             if len(set(tax_providers)) != len(tax_providers):
                 raise serializers.ValidationError("Tax providers must be distinct.")
         return attrs
@@ -457,8 +446,7 @@ class OrganizationUpdateSerializer(TimezoneFieldMixin, serializers.ModelSerializ
             cache.delete(f"tz_organization_{instance.id}")
         instance.timezone = new_tz
 
-        address = validated_data.pop("address", None)
-        if address:
+        if address := validated_data.pop("address", None):
             new_address, _ = Address.objects.get_or_create(
                 **address, organization=instance
             )
@@ -563,14 +551,12 @@ class CustomerUpdateSerializer(TimezoneFieldMixin, serializers.ModelSerializer):
         if tz:
             instance.timezone = tz
             instance.timezone_set = True
-        billing_address = validated_data.pop("billing_address", None)
-        if billing_address:
+        if billing_address := validated_data.pop("billing_address", None):
             new_address, _ = Address.objects.get_or_create(
                 **billing_address, organization=instance.organization
             )
             instance.billing_address = new_address
-        shipping_address = validated_data.pop("shipping_address", None)
-        if shipping_address:
+        if shipping_address := validated_data.pop("shipping_address", None):
             new_address, _ = Address.objects.get_or_create(
                 **shipping_address, organization=instance.organization
             )
@@ -642,10 +628,9 @@ class WebhookEndpointSerializer(TimezoneFieldMixin, serializers.ModelSerializer)
         for trigger in triggers_in:
             wh_trigger_obj = WebhookTrigger(trigger_name=trigger)
             trigger_objs.append(wh_trigger_obj)
-        webhook_endpoint = WebhookEndpoint.objects.create_with_triggers(
+        return WebhookEndpoint.objects.create_with_triggers(
             **validated_data, triggers=trigger_objs
         )
-        return webhook_endpoint
 
     def update(self, instance, validated_data):
         triggers_in = validated_data.pop("triggers_in")
@@ -740,10 +725,12 @@ class MetricUpdateSerializer(TimezoneFieldMixin, serializers.ModelSerializer):
                 organization=self.context["organization"],
             ).prefetch_related("plan_components", "plan_components__billable_metric")
             for plan_version in all_active_plan_versions:
-                for component in plan_version.plan_components.all():
-                    if component.billable_metric == self.instance:
-                        active_plan_versions_with_metric.append(str(plan_version))
-        if len(active_plan_versions_with_metric) > 0:
+                active_plan_versions_with_metric.extend(
+                    str(plan_version)
+                    for component in plan_version.plan_components.all()
+                    if component.billable_metric == self.instance
+                )
+        if active_plan_versions_with_metric:
             raise serializers.ValidationError(
                 f"Cannot archive metric. It is currently used in the following plan versions: {', '.join(active_plan_versions_with_metric)}"
             )
@@ -826,8 +813,7 @@ class MetricCreateSerializer(TimezoneFieldMixin, serializers.ModelSerializer):
 
     def create(self, validated_data):
         metric_type = validated_data["metric_type"]
-        metric = METRIC_HANDLER_MAP[metric_type].create_metric(validated_data)
-        return metric
+        return METRIC_HANDLER_MAP[metric_type].create_metric(validated_data)
 
 
 class ExternalPlanLinkSerializer(TimezoneFieldMixin, serializers.ModelSerializer):
@@ -1021,9 +1007,10 @@ class PlanComponentCreateSerializer(TimezoneFieldMixin, serializers.ModelSeriali
             ), "All tiers must have an end, last one is the only one allowed to have open end"
             for i, tier in enumerate(tiers_sorted[:-1]):
                 diff = tiers_sorted[i + 1]["range_start"] - tier["range_end"]
-                assert diff == Decimal(1) or diff == Decimal(
-                    0
-                ), "Tier ranges must be continuous or separated by 1"
+                assert diff in [
+                    Decimal(1),
+                    Decimal(0),
+                ], "Tier ranges must be continuous or separated by 1"
         except AssertionError as e:
             raise serializers.ValidationError(str(e))
         data["invoicing_interval_unit"] = PlanComponent.convert_length_label_to_value(
@@ -1729,7 +1716,7 @@ class PlanVersionActionSerializer(PlanVersionDetailSerializer):
     object_type = serializers.SerializerMethodField()
 
     def get_string_repr(self, obj):
-        return obj.plan.plan_name + " v" + str(obj.version)
+        return f"{obj.plan.plan_name} v{str(obj.version)}"
 
     def get_object_type(self, obj):
         return "Plan Version"
@@ -1874,14 +1861,14 @@ class InvoiceDetailSerializer(api_serializers.InvoiceSerializer):
 
 
 class LightweightInvoiceDetailSerializer(InvoiceDetailSerializer):
+
+
+
     class Meta(InvoiceDetailSerializer.Meta):
         fields = tuple(
-            set(InvoiceDetailSerializer.Meta.fields)
-            - set(
-                [
-                    "line_items",
-                    "customer",
-                ]
+            (
+                set(InvoiceDetailSerializer.Meta.fields)
+                - {"line_items", "customer"}
             )
         )
         extra_kwargs = {**InvoiceDetailSerializer.Meta.extra_kwargs}
@@ -2264,21 +2251,16 @@ class AddOnVersionCreateSerializer(TimezoneFieldMixin, serializers.ModelSerializ
         # create the plan version
         validated_data["addon_spec"] = addon_spec
         validated_data["make_active"] = True
-        pv = PlanVersionCreateSerializer(context=self.context).create(validated_data)
-        return pv
+        return PlanVersionCreateSerializer(context=self.context).create(validated_data)
 
 
 class InitialAddOnVersionCreateSerializer(AddOnVersionCreateSerializer):
+
+
+
     class Meta(AddOnVersionCreateSerializer.Meta):
         model = PlanVersion
-        fields = tuple(
-            set(AddOnVersionCreateSerializer.Meta.fields)
-            - set(
-                [
-                    "addon_id",
-                ]
-            )
-        )
+        fields = tuple((set(AddOnVersionCreateSerializer.Meta.fields) - {"addon_id"}))
 
 
 class AddOnCreateSerializer(serializers.ModelSerializer):
@@ -2342,12 +2324,11 @@ class UsageAlertCreateSerializer(TimezoneFieldMixin, serializers.ModelSerializer
     def create(self, validated_data):
         metric = validated_data.pop("metric")
         plan_version = validated_data.pop("plan_version")
-        usage_alert = UsageAlert.objects.create(
+        return UsageAlert.objects.create(
             metric=metric,
             plan_version=plan_version,
             **validated_data,
         )
-        return usage_alert
 
 
 class PlanVersionHistoricalSubscriptionSerializer(

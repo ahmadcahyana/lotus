@@ -170,11 +170,7 @@ SVIX_CONNECTOR = settings.SVIX_CONNECTOR
 IDEMPOTENCY_ID_NAMESPACE = settings.IDEMPOTENCY_ID_NAMESPACE
 logger = logging.getLogger("django.server")
 USE_KAFKA = settings.USE_KAFKA
-if USE_KAFKA:
-    kafka_producer = Producer()
-else:
-    kafka_producer = None
-
+kafka_producer = Producer() if USE_KAFKA else None
 logger = logging.getLogger("django.server")
 
 
@@ -249,17 +245,15 @@ class CustomerViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
         return qs
 
     def get_serializer_class(self, default=None):
-        if self.action == "create":
-            return CustomerCreateSerializer
-        elif self.action == "archive":
+        if self.action == "archive":
             return EmptySerializer
         elif self.action == "cost_analysis":
             return PeriodRequestSerializer
+        elif self.action == "create":
+            return CustomerCreateSerializer
         elif self.action == "draft_invoice":
             return DraftInvoiceRequestSerializer
-        if default:
-            return default
-        return CustomerSerializer
+        return default if default else CustomerSerializer
 
     @extend_schema(responses=CustomerSerializer)
     def create(self, request, *args, **kwargs):
@@ -400,7 +394,7 @@ class CustomerViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
                     per_day_dict[date]["cost_data"][metric.billable_metric_name][
                         "cost"
                     ] += usage
-        for date, items in per_day_dict.items():
+        for items in per_day_dict.values():
             items["cost_data"] = [v for k, v in items["cost_data"].items()]
         subscriptions = (
             SubscriptionRecord.objects.filter(
@@ -468,7 +462,7 @@ class CustomerViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
                 raise DuplicateCustomer("Customer email already exists")
             elif "unique_customer_id" in str(cause):
                 raise DuplicateCustomer("Customer ID already exists")
-            raise ServerError("Unknown error: " + str(cause))
+            raise ServerError(f"Unknown error: {str(cause)}")
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -487,11 +481,9 @@ class CustomerViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
                 posthog.capture(
                     POSTHOG_PERSON
                     if POSTHOG_PERSON
-                    else (
-                        username
-                        if username
-                        else organization.organization_name + " (API Key)"
-                    ),
+                    else username
+                    if username
+                    else f"{organization.organization_name} (API Key)",
                     event=f"{self.action}_customer",
                     properties={"organization": organization.organization_name},
                 )
@@ -533,9 +525,7 @@ class PlanViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
         include_tags = plan_filter_serializer.validated_data.get("include_tags")
         include_tags_all = plan_filter_serializer.validated_data.get("include_tags_all")
         exclude_tags = plan_filter_serializer.validated_data.get("exclude_tags")
-        duration = plan_filter_serializer.validated_data.get("duration")
-
-        if duration:
+        if duration := plan_filter_serializer.validated_data.get("duration"):
             plans_filters.append(Q(duration=duration))
 
         # then filter plan versions
@@ -689,11 +679,9 @@ class PlanViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
                 posthog.capture(
                     POSTHOG_PERSON
                     if POSTHOG_PERSON
-                    else (
-                        username
-                        if username
-                        else organization.organization_name + " (API Key)"
-                    ),
+                    else username
+                    if username
+                    else f"{organization.organization_name} (API Key)",
                     event=f"{self.action}_plan",
                     properties={"organization": organization.organization_name},
                 )
@@ -704,10 +692,7 @@ class PlanViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
     def get_serializer_context(self):
         context = super().get_serializer_context()
         organization = self.request.organization
-        if self.request.user.is_authenticated:
-            user = self.request.user
-        else:
-            user = None
+        user = self.request.user if self.request.user.is_authenticated else None
         context.update({"organization": organization, "user": user})
         return context
 
@@ -724,10 +709,7 @@ class PlanViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
 
         serializer = self.get_serializer(queryset, many=True)
         data = serializer.data
-        ret = []
-        for plan in data:
-            if len(plan["versions"]) > 0:
-                ret.append(plan)
+        ret = [plan for plan in data if len(plan["versions"]) > 0]
         return Response(ret)
 
     @extend_schema(
@@ -756,8 +738,7 @@ class SubscriptionViewSet(
     def get_object(self):
         subscription_id = self.kwargs.get("subscription_id")
         subscription_uuid = SubscriptionUUIDField().to_internal_value(subscription_id)
-        addon_id = self.kwargs.get("addon_id")
-        if addon_id:
+        if addon_id := self.kwargs.get("addon_id"):
             try:
                 addon_uuid = AddOnUUIDField().to_internal_value(addon_id)
             except Exception as e:
@@ -809,11 +790,7 @@ class SubscriptionViewSet(
             return SubscriptionRecordUpdateSerializer
         elif self.action == "switch_plan":
             return SubscriptionRecordSwitchPlanSerializer
-        elif (
-            self.action == "cancel_multi"
-            or self.action == "cancel_addon"
-            or self.action == "cancel"
-        ):
+        elif self.action in ["cancel_multi", "cancel_addon", "cancel"]:
             return SubscriptionRecordCancelSerializer
         elif self.action == "add":
             return SubscriptionRecordCreateSerializerOld
@@ -1334,7 +1311,7 @@ class SubscriptionViewSet(
             posthog.capture(
                 POSTHOG_PERSON
                 if POSTHOG_PERSON
-                else (organization.organization_name + " (Unknown)"),
+                else f"{organization.organization_name} (Unknown)",
                 event="DEPRECATED_add_subscription",
                 properties={
                     "organization": organization.organization_name,
@@ -1386,7 +1363,7 @@ class SubscriptionViewSet(
                 posthog.capture(
                     POSTHOG_PERSON
                     if POSTHOG_PERSON
-                    else (organization.organization_name + " (Unknown)"),
+                    else f"{organization.organization_name} (Unknown)",
                     event="DEPRECATED_cancel_subscription",
                     properties={
                         "organization": organization.organization_name,
@@ -1412,8 +1389,7 @@ class SubscriptionViewSet(
         plan_to_replace = qs.first().billing_plan
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        switch_plan = serializer.validated_data.get("plan")
-        if switch_plan:
+        if switch_plan := serializer.validated_data.get("plan"):
             possible_billing_plans = switch_plan.versions.all()
             current_currency = qs.first().billing_plan.currency
             possible_billing_plans = possible_billing_plans.filter(
@@ -1436,10 +1412,11 @@ class SubscriptionViewSet(
                 elif active_billing_plans.count() == 1:
                     replace_billing_plan = active_billing_plans.first()
                 else:
-                    matching_plans_active = []
-                    for bp in active_billing_plans:
-                        if qs.first().customer in bp.target_customers.all():
-                            matching_plans_active.append(bp)
+                    matching_plans_active = [
+                        bp
+                        for bp in active_billing_plans
+                        if qs.first().customer in bp.target_customers.all()
+                    ]
                     if len(matching_plans_active) == 1:
                         replace_billing_plan = matching_plans_active[0]
                     else:
@@ -1493,7 +1470,7 @@ class SubscriptionViewSet(
                 update_dict["auto_renew"] = False
             if end_date:
                 update_dict["end_date"] = end_date
-            if len(update_dict) > 0:
+            if update_dict:
                 qs.update(**update_dict)
 
         return_qs = SubscriptionRecord.base_objects.filter(
@@ -1505,7 +1482,7 @@ class SubscriptionViewSet(
             posthog.capture(
                 POSTHOG_PERSON
                 if POSTHOG_PERSON
-                else (organization.organization_name + " (Unknown)"),
+                else f"{organization.organization_name} (Unknown)",
                 event="DEPRECATED_update_subscription",
                 properties={
                     "organization": organization.organization_name,
@@ -1529,24 +1506,22 @@ class SubscriptionViewSet(
                 posthog.capture(
                     POSTHOG_PERSON
                     if POSTHOG_PERSON
-                    else (
-                        username
-                        if username
-                        else organization.organization_name + " (API Key)"
-                    ),
+                    else username
+                    if username
+                    else f"{organization.organization_name} (API Key)",
                     event=f"{self.action}_subscription",
                     properties={"organization": organization.organization_name},
                 )
             except Exception:
                 pass
-            # if username:
-            #     if self.action == "plans":
-            #         action.send(
-            #             self.request.user,
-            #             verb="attached",
-            #             action_object=instance.customer,
-            #             target=instance.billing_plan,
-            #         )
+                # if username:
+                #     if self.action == "plans":
+                #         action.send(
+                #             self.request.user,
+                #             verb="attached",
+                #             action_object=instance.customer,
+                #             target=instance.billing_plan,
+                #         )
 
         return response
 
@@ -1598,9 +1573,7 @@ class InvoiceViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
     def get_serializer_class(self, default=None):
         if self.action == "partial_update":
             return InvoiceUpdateSerializer
-        if default:
-            return default
-        return InvoiceSerializer
+        return default if default else InvoiceSerializer
 
     @extend_schema(request=InvoiceUpdateSerializer, responses=InvoicePaymentSerializer)
     def partial_update(self, request, *args, **kwargs):
@@ -1640,11 +1613,9 @@ class InvoiceViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
                 posthog.capture(
                     POSTHOG_PERSON
                     if POSTHOG_PERSON
-                    else (
-                        username
-                        if username
-                        else organization.organization_name + " (API Key)"
-                    ),
+                    else username
+                    if username
+                    else f"{organization.organization_name} (API Key)",
                     event=f"{self.action}_invoice",
                     properties={"organization": organization.organization_name},
                 )
@@ -1756,9 +1727,7 @@ class CustomerBalanceAdjustmentViewSet(
             if effective_before:
                 args.append(Q(effective_at__lte=effective_before))
             args.append(Q(customer=serializer.validated_data["customer"]))
-            status_combo = []
-            for baladj_status in allowed_status:
-                status_combo.append(Q(status=baladj_status))
+            status_combo = [Q(status=baladj_status) for baladj_status in allowed_status]
             args.append(reduce(operator.or_, status_combo))
             if serializer.validated_data.get("pricing_unit"):
                 args.append(Q(pricing_unit=serializer.validated_data["pricing_unit"]))
@@ -1873,24 +1842,22 @@ class CustomerBalanceAdjustmentViewSet(
                 posthog.capture(
                     POSTHOG_PERSON
                     if POSTHOG_PERSON
-                    else (
-                        username
-                        if username
-                        else organization.organization_name + " (API Key)"
-                    ),
+                    else username
+                    if username
+                    else f"{organization.organization_name} (API Key)",
                     event=f"{self.action}_balance_adjustment",
                     properties={"organization": organization.organization_name},
                 )
             except Exception:
                 pass
-            # if username:
-            #     if self.action == "plans":
-            #         action.send(
-            #             self.request.user,
-            #             verb="attached",
-            #             action_object=instance.customer,
-            #             target=instance.billing_plan,
-            #         )
+                # if username:
+                #     if self.action == "plans":
+                #         action.send(
+                #             self.request.user,
+                #             verb="attached",
+                #             action_object=instance.customer,
+                #             target=instance.billing_plan,
+                #         )
 
         return response
 
@@ -2197,13 +2164,12 @@ def load_event(request: HttpRequest) -> Optional[dict]:
     """
     if request.content_type == "application/json":
         try:
-            event_data = json.loads(request.body)
-            return event_data
+            return json.loads(request.body)
         except json.JSONDecodeError as e:
             logger.error(e)
             # if not, it's probably base64 encoded from other libraries
             event_data = json.loads(
-                base64.b64decode(request + "===")
+                base64.b64decode(f"{request}===")
                 .decode("utf8", "surrogatepass")
                 .encode("utf-16", "surrogatepass")
             )
@@ -2267,11 +2233,7 @@ def track_event(request):
     if not event_list:
         return HttpResponseBadRequest("No data provided")
     if not isinstance(event_list, list):
-        if "batch" in event_list:
-            event_list = event_list["batch"]
-        else:
-            event_list = [event_list]
-
+        event_list = event_list["batch"] if "batch" in event_list else [event_list]
     bad_events = {}
     now = now_utc()
     for data in event_list:
@@ -2468,7 +2430,9 @@ class GetCustomerFeatureAccessView(APIView):
             posthog.capture(
                 POSTHOG_PERSON
                 if POSTHOG_PERSON
-                else (username if username else result + " (Unknown)"),
+                else username
+                if username
+                else f"{result} (Unknown)",
                 event="DEPRECATED_get_feature_access",
                 properties={"organization": organization.organization_name},
             )
@@ -2495,14 +2459,13 @@ class GetCustomerFeatureAccessView(APIView):
         features = []
         subscriptions = subscriptions.prefetch_related("billing_plan__features")
         for sub in subscriptions:
-            subscription_filters = []
-            for filter_arr in sub.subscription_filters:
-                subscription_filters.append(
-                    {
-                        "property_name": filter_arr[0],
-                        "value": filter_arr[1],
-                    }
-                )
+            subscription_filters = [
+                {
+                    "property_name": filter_arr[0],
+                    "value": filter_arr[1],
+                }
+                for filter_arr in sub.subscription_filters
+            ]
             sub_dict = {
                 "feature_name": feature_name,
                 "plan_id": PlanUUIDField().to_representation(
@@ -2552,11 +2515,9 @@ class GetCustomerEventAccessView(APIView):
             posthog.capture(
                 POSTHOG_PERSON
                 if POSTHOG_PERSON
-                else (
-                    username
-                    if username
-                    else organization.organization_name + " (Unknown)"
-                ),
+                else username
+                if username
+                else f"{organization.organization_name} (Unknown)",
                 event="DEPRECATED_get_metric_access",
                 properties={"organization": organization.organization_name},
             )
@@ -2589,14 +2550,13 @@ class GetCustomerEventAccessView(APIView):
             "billing_plan__plan_components__tiers",
         )
         for sr in subscription_records:
-            subscription_filters = []
-            for filter_arr in sr.subscription_filters:
-                subscription_filters.append(
-                    {
-                        "property_name": filter_arr[0],
-                        "value": filter_arr[1],
-                    }
-                )
+            subscription_filters = [
+                {
+                    "property_name": filter_arr[0],
+                    "value": filter_arr[1],
+                }
+                for filter_arr in sr.subscription_filters
+            ]
             single_sub_dict = {
                 "plan_id": PlanUUIDField().to_representation(
                     sr.billing_plan.plan.plan_id
@@ -2636,10 +2596,6 @@ class GetCustomerEventAccessView(APIView):
                     single_sub_dict["usage_per_component"].append(unique_tup_dict)
             metrics.append(single_sub_dict)
         GetEventAccessSerializer(many=True).validate(metrics)
-        return Response(
-            metrics,
-            status=status.HTTP_200_OK,
-        )
         return Response(
             metrics,
             status=status.HTTP_200_OK,

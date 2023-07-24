@@ -163,15 +163,14 @@ class MetricHandler(abc.ABC):
         injection_dict["start_date"] = start_date
         injection_dict["end_date"] = end_date
         injection_dict["cagg_name"] = (
-            ("org_" + organization.organization_id.hex)[:22]
-            + "___"
-            + ("metric_" + metric.metric_id.hex)[:22]
-            + "___"
+            f'{f"org_{organization.organization_id.hex}"[:22]}___{f"metric_{metric.metric_id.hex}"[:22]}___'
             + (
                 "cumsum"
                 if metric.metric_type == METRIC_TYPE.GAUGE
                 else (
-                    "day" if metric.metric_type == METRIC_TYPE.COUNTER else "rate_cagg"
+                    "day"
+                    if metric.metric_type == METRIC_TYPE.COUNTER
+                    else "rate_cagg"
                 )
             )
         )
@@ -193,11 +192,10 @@ class MetricHandler(abc.ABC):
         customers = Customer.objects.filter(
             uuidv5_customer_id__in=customer_ids_minus_other
         )
-        all_results_with_customer_objects = {}
-        for customer in customers:
-            all_results_with_customer_objects[customer] = all_results[
-                customer.uuidv5_customer_id
-            ]
+        all_results_with_customer_objects = {
+            customer: all_results[customer.uuidv5_customer_id]
+            for customer in customers
+        }
         if nil_uuid in all_results:
             all_results_with_customer_objects["Other"] = all_results[nil_uuid]
         return all_results_with_customer_objects
@@ -230,8 +228,8 @@ class CounterHandler(MetricHandler):
             "query_type": metric.usage_aggregation_type,
             "filter_properties": {},
             "uuidv5_customer_id": uuidv5_customer_id,
+            "group_by": organization.subscription_filter_keys,
         }
-        injection_dict["group_by"] = organization.subscription_filter_keys
         for filter in billing_record.subscription.subscription_filters:
             injection_dict["filter_properties"][filter[0]] = [filter[1]]
         return injection_dict
@@ -251,8 +249,8 @@ class CounterHandler(MetricHandler):
         injection_dict = CounterHandler._prepare_injection_dict(
             metric, billing_record, organization
         )
-        start = billing_record.start_date
         end = billing_record.end_date
+        start = billing_record.start_date
         # there's 3 periods here.... the chunk between the start and the end of that day,
         # the full days in between, and the chunk between the last full day and the end. There
         # are scenarios where all 3 of them happen or don't independently of each other, so
@@ -288,13 +286,9 @@ class CounterHandler(MetricHandler):
             injection_dict["end_date"] = start.replace(
                 hour=23, minute=59, second=59, microsecond=999999
             )
-            injection_dict["cagg_name"] = (
-                ("org_" + organization.organization_id.hex)[:22]
-                + "___"
-                + ("metric_" + metric.metric_id.hex)[:22]
-                + "___"
-                + "second"
-            )
+            injection_dict[
+                "cagg_name"
+            ] = f'{f"org_{organization.organization_id.hex}"[:22]}___{f"metric_{metric.metric_id.hex}"[:22]}___second'
             query = Template(COUNTER_CAGG_TOTAL).render(**injection_dict)
             with connection.cursor() as cursor:
                 cursor.execute(query)
@@ -303,13 +297,9 @@ class CounterHandler(MetricHandler):
         if full_days_between:
             injection_dict["start_date"] = full_days_btwn_start
             injection_dict["end_date"] = full_days_btwn_end
-            injection_dict["cagg_name"] = (
-                ("org_" + organization.organization_id.hex)[:22]
-                + "___"
-                + ("metric_" + metric.metric_id.hex)[:22]
-                + "___"
-                + "day"
-            )
+            injection_dict[
+                "cagg_name"
+            ] = f'{f"org_{organization.organization_id.hex}"[:22]}___{f"metric_{metric.metric_id.hex}"[:22]}___day'
             query = Template(COUNTER_CAGG_TOTAL).render(**injection_dict)
             with connection.cursor() as cursor:
                 cursor.execute(query)
@@ -320,13 +310,9 @@ class CounterHandler(MetricHandler):
                 hour=0, minute=0, second=0, microsecond=0
             )
             injection_dict["end_date"] = end.replace(microsecond=0)
-            injection_dict["cagg_name"] = (
-                ("org_" + organization.organization_id.hex)[:22]
-                + "___"
-                + ("metric_" + metric.metric_id.hex)[:22]
-                + "___"
-                + "second"
-            )
+            injection_dict[
+                "cagg_name"
+            ] = f'{f"org_{organization.organization_id.hex}"[:22]}___{f"metric_{metric.metric_id.hex}"[:22]}___second'
             query = Template(COUNTER_CAGG_TOTAL).render(**injection_dict)
             with connection.cursor() as cursor:
                 cursor.execute(query)
@@ -503,25 +489,22 @@ class CounterHandler(MetricHandler):
             )
         if usg_agg_type not in CounterHandler._allowed_usage_aggregation_types():
             raise MetricValidationFailed(
-                "[METRIC TYPE: COUNTER] Usage aggregation type {} is not allowed.".format(
-                    usg_agg_type
-                )
+                f"[METRIC TYPE: COUNTER] Usage aggregation type {usg_agg_type} is not allowed."
             )
         if event_name is None:
             raise MetricValidationFailed(
                 "[METRIC TYPE: COUNTER] Must specify event name"
             )
-        if usg_agg_type != METRIC_AGGREGATION.COUNT:
-            if property_name is None:
-                raise MetricValidationFailed(
-                    "[METRIC TYPE: COUNTER] Must specify property name unless using COUNT aggregation"
-                )
-        else:
+        if usg_agg_type == METRIC_AGGREGATION.COUNT:
             if property_name is not None:
                 logger.info(
                     "[METRIC TYPE: COUNTER] Property name specified but not needed for COUNT aggregation"
                 )
                 data.pop("property_name", None)
+        elif property_name is None:
+            raise MetricValidationFailed(
+                "[METRIC TYPE: COUNTER] Must specify property name unless using COUNT aggregation"
+            )
         if granularity:
             logger.info(
                 "[METRIC TYPE: COUNTER] Granularity type not allowed. Making null."
@@ -569,17 +552,15 @@ class CounterHandler(MetricHandler):
             ],
         }
         base_name = (
-            ("org_" + organization.organization_id.hex)[:22]
-            + "___"
-            + ("metric_" + metric.metric_id.hex)[:22]
-            + "___"
-        )
-        sql_injection_data["cagg_name"] = base_name + "day"
+            (f"org_{organization.organization_id.hex}"[:22] + "___")
+            + f"metric_{metric.metric_id.hex}"[:22]
+        ) + "___"
+        sql_injection_data["cagg_name"] = f"{base_name}day"
         sql_injection_data["bucket_size"] = "day"
         day_query = Template(COUNTER_CAGG_QUERY).render(**sql_injection_data)
         day_drop_query = Template(CAGG_DROP).render(**sql_injection_data)
         day_refresh_query = Template(CAGG_REFRESH).render(**sql_injection_data)
-        sql_injection_data["cagg_name"] = base_name + "second"
+        sql_injection_data["cagg_name"] = f"{base_name}second"
         sql_injection_data["bucket_size"] = "second"
         second_query = Template(COUNTER_CAGG_QUERY).render(**sql_injection_data)
         second_drop_query = Template(CAGG_DROP).render(**sql_injection_data)
@@ -614,14 +595,12 @@ class CounterHandler(MetricHandler):
         from .common_query_templates import CAGG_DROP
 
         base_name = (
-            ("org_" + metric.organization.organization_id.hex)[:22]
-            + "___"
-            + ("metric_" + metric.metric_id.hex)[:22]
-            + "___"
-        )
-        sql_injection_data = {"cagg_name": base_name + "day"}
+            (f"org_{metric.organization.organization_id.hex}"[:22] + "___")
+            + f"metric_{metric.metric_id.hex}"[:22]
+        ) + "___"
+        sql_injection_data = {"cagg_name": f"{base_name}day"}
         day_drop_query = Template(CAGG_DROP).render(**sql_injection_data)
-        sql_injection_data = {"cagg_name": base_name + "second"}
+        sql_injection_data = {"cagg_name": f"{base_name}second"}
         second_drop_query = Template(CAGG_DROP).render(**sql_injection_data)
         with connection.cursor() as cursor:
             cursor.execute(day_drop_query)
@@ -653,21 +632,19 @@ class CustomHandler(MetricHandler):
         from metering_billing.models import Organization
 
         organization = Organization.objects.get(id=metric.organization.id)
+        start = billing_record.start_date
+        end = billing_record.end_date
         injection_dict = {
             "filter_properties": {},
             "uuidv5_customer_id": billing_record.customer.uuidv5_customer_id,
+            "start_date": start,
+            "end_date": end,
+            "organization_id": organization.id,
         }
-        start = billing_record.start_date
-        end = billing_record.end_date
-        injection_dict["start_date"] = start
-        injection_dict["end_date"] = end
-        injection_dict["organization_id"] = organization.id
         for filter in billing_record.subscription.subscription_filters:
             injection_dict["filter_properties"][filter[0]] = [filter[1]]
         results = CustomHandler._run_query(metric.custom_sql, injection_dict)
-        if len(results) == 0:
-            return Decimal(0)
-        return results[0].usage_qty
+        return Decimal(0) if len(results) == 0 else results[0].usage_qty
 
     @staticmethod
     def get_billing_record_current_usage(
@@ -692,9 +669,7 @@ class CustomHandler(MetricHandler):
             )
             if x <= now
         ]
-        dates_dict = {x: usage_qty / len(dates_bwn) for x in dates_bwn}
-
-        return dates_dict
+        return {x: usage_qty / len(dates_bwn) for x in dates_bwn}
 
     @staticmethod
     def create_continuous_aggregate(metric: Metric, refresh=False):
@@ -794,7 +769,7 @@ class CustomHandler(MetricHandler):
             ), "Custom SQL query must return a column named 'usage_qty'"
         except Exception as e:
             raise MetricValidationFailed(
-                "Custom SQL query could not be executed successfully: {}".format(e)
+                f"Custom SQL query could not be executed successfully: {e}"
             )
         return data
 
@@ -857,9 +832,7 @@ class GaugeHandler(MetricHandler):
             raise MetricValidationFailed("Metric type must be GAUGE for GaugeHandler")
         if usg_agg_type not in GaugeHandler._allowed_usage_aggregation_types():
             raise MetricValidationFailed(
-                "[METRIC TYPE: GAUGE] Usage aggregation type {} is not allowed.".format(
-                    usg_agg_type
-                )
+                f"[METRIC TYPE: GAUGE] Usage aggregation type {usg_agg_type} is not allowed."
             )
         if not granularity:
             raise MetricValidationFailed(
@@ -976,12 +949,12 @@ class GaugeHandler(MetricHandler):
             ],
         }
         sql_injection_data["cagg_name"] = (
-            ("org_" + organization.organization_id.hex)[:22]
+            (
+                (f"org_{organization.organization_id.hex}"[:22] + "___")
+                + f"metric_{metric.metric_id.hex}"[:22]
+            )
             + "___"
-            + ("metric_" + metric.metric_id.hex)[:22]
-            + "___"
-            + "cumsum"
-        )
+        ) + "cumsum"
         if metric.event_type == "delta":
             query = Template(GAUGE_DELTA_CUMULATIVE_SUM).render(**sql_injection_data)
             drop_old = Template(GAUGE_DELTA_DROP_OLD).render(**sql_injection_data)
@@ -1007,12 +980,15 @@ class GaugeHandler(MetricHandler):
         organization = metric.organization
         sql_injection_data = {
             "cagg_name": (
-                ("org_" + organization.organization_id.hex)[:22]
-                + "___"
-                + ("metric_" + metric.metric_id.hex)[:22]
-                + "___"
+                (
+                    (
+                        (f"org_{organization.organization_id.hex}"[:22] + "___")
+                        + f"metric_{metric.metric_id.hex}"[:22]
+                    )
+                    + "___"
+                )
                 + "cumsum"
-            ),
+            )
         }
         query = Template(CAGG_DROP).render(**sql_injection_data)
         if metric.event_type == "delta":
@@ -1057,10 +1033,13 @@ class GaugeHandler(MetricHandler):
         injection_dict = {
             "proration_units": proration_units,
             "cumsum_cagg": (
-                ("org_" + organization.organization_id.hex)[:22]
-                + "___"
-                + ("metric_" + metric.metric_id.hex)[:22]
-                + "___"
+                (
+                    (
+                        (f"org_{organization.organization_id.hex}"[:22] + "___")
+                        + f"metric_{metric.metric_id.hex}"[:22]
+                    )
+                    + "___"
+                )
                 + "cumsum"
             ),
             "group_by": groupby,
@@ -1069,7 +1048,9 @@ class GaugeHandler(MetricHandler):
             "start_date": billing_record.start_date,
             "end_date": billing_record.end_date,
             "granularity_ratio": granularity_ratio,
-            "uuidv5_event_name": uuid.uuid5(EVENT_NAME_NAMESPACE, metric.event_name),
+            "uuidv5_event_name": uuid.uuid5(
+                EVENT_NAME_NAMESPACE, metric.event_name
+            ),
             "organization_id": organization.id,
             "numeric_filters": [
                 (x.property_name, x.operator, x.comparison_value)
@@ -1094,9 +1075,7 @@ class GaugeHandler(MetricHandler):
         with connection.cursor() as cursor:
             cursor.execute(query)
             result = namedtuplefetchall(cursor)
-        if len(result) == 0:
-            return Decimal(0)
-        return result[0].usage_qty
+        return Decimal(0) if len(result) == 0 else result[0].usage_qty
 
     @staticmethod
     def get_billing_record_current_usage(
@@ -1132,10 +1111,13 @@ class GaugeHandler(MetricHandler):
         injection_dict = {
             "proration_units": proration_units,
             "cumsum_cagg": (
-                ("org_" + organization.organization_id.hex)[:22]
-                + "___"
-                + ("metric_" + metric.metric_id.hex)[:22]
-                + "___"
+                (
+                    (
+                        (f"org_{organization.organization_id.hex}"[:22] + "___")
+                        + f"metric_{metric.metric_id.hex}"[:22]
+                    )
+                    + "___"
+                )
                 + "cumsum"
             ),
             "group_by": groupby,
@@ -1144,7 +1126,9 @@ class GaugeHandler(MetricHandler):
             "start_date": billing_record.start_date,
             "end_date": billing_record.end_date,
             "granularity_ratio": granularity_ratio,
-            "uuidv5_event_name": uuid.uuid5(EVENT_NAME_NAMESPACE, metric.event_name),
+            "uuidv5_event_name": uuid.uuid5(
+                EVENT_NAME_NAMESPACE, metric.event_name
+            ),
             "organization_id": organization.id,
             "numeric_filters": [
                 (x.property_name, x.operator, x.comparison_value)
@@ -1165,9 +1149,7 @@ class GaugeHandler(MetricHandler):
         with connection.cursor() as cursor:
             cursor.execute(query)
             result = namedtuplefetchall(cursor)
-        if len(result) == 0:
-            return Decimal(0)
-        return result[0].usage_qty
+        return Decimal(0) if len(result) == 0 else result[0].usage_qty
 
     @staticmethod
     def get_billing_record_daily_billable_usage(
@@ -1203,10 +1185,13 @@ class GaugeHandler(MetricHandler):
         injection_dict = {
             "proration_units": proration_units,
             "cumsum_cagg": (
-                ("org_" + organization.organization_id.hex)[:22]
-                + "___"
-                + ("metric_" + metric.metric_id.hex)[:22]
-                + "___"
+                (
+                    (
+                        (f"org_{organization.organization_id.hex}"[:22] + "___")
+                        + f"metric_{metric.metric_id.hex}"[:22]
+                    )
+                    + "___"
+                )
                 + "cumsum"
             ),
             "group_by": groupby,
@@ -1215,7 +1200,9 @@ class GaugeHandler(MetricHandler):
             "start_date": billing_record.start_date,
             "end_date": billing_record.end_date,
             "granularity_ratio": granularity_ratio,
-            "uuidv5_event_name": uuid.uuid5(EVENT_NAME_NAMESPACE, metric.event_name),
+            "uuidv5_event_name": uuid.uuid5(
+                EVENT_NAME_NAMESPACE, metric.event_name
+            ),
             "organization_id": organization.id,
             "numeric_filters": [
                 (x.property_name, x.operator, x.comparison_value)
@@ -1295,27 +1282,22 @@ class RateHandler(MetricHandler):
             raise MetricValidationFailed("Metric type must be RATE for a RateHandler.")
         if usg_agg_type not in RateHandler._allowed_usage_aggregation_types():
             raise MetricValidationFailed(
-                "[METRIC TYPE: RATE] Usage aggregation type {} is not allowed.".format(
-                    usg_agg_type
-                )
+                f"[METRIC TYPE: RATE] Usage aggregation type {usg_agg_type} is not allowed."
             )
         if bill_agg_type not in RateHandler._allowed_billable_aggregation_types():
             raise MetricValidationFailed(
-                "[METRIC TYPE: RATE] Billable aggregation type {} is not allowed.".format(
-                    bill_agg_type
-                )
+                f"[METRIC TYPE: RATE] Billable aggregation type {bill_agg_type} is not allowed."
             )
-        if usg_agg_type != METRIC_AGGREGATION.COUNT:
-            if property_name is None:
-                raise MetricValidationFailed(
-                    "[METRIC TYPE: RATE] Must specify property name unless using COUNT aggregation"
-                )
-        else:
+        if usg_agg_type == METRIC_AGGREGATION.COUNT:
             if property_name is not None:
                 logger.info(
                     "[METRIC TYPE: RATE] Property name specified but not needed for COUNT aggregation"
                 )
                 data.pop("property_name", None)
+        elif property_name is None:
+            raise MetricValidationFailed(
+                "[METRIC TYPE: RATE] Must specify property name unless using COUNT aggregation"
+            )
         if not granularity:
             raise MetricValidationFailed("[METRIC TYPE: RATE] Must specify granularity")
         if event_type:
@@ -1378,12 +1360,12 @@ class RateHandler(MetricHandler):
             "lookback_units": metric.granularity,
         }
         sql_injection_data["cagg_name"] = (
-            ("org_" + organization.organization_id.hex)[:22]
+            (
+                (f"org_{organization.organization_id.hex}"[:22] + "___")
+                + f"metric_{metric.metric_id.hex}"[:22]
+            )
             + "___"
-            + ("metric_" + metric.metric_id.hex)[:22]
-            + "___"
-            + "rate_cagg"
-        )
+        ) + "rate_cagg"
         query = Template(RATE_CAGG_QUERY).render(**sql_injection_data)
         refresh_query = Template(CAGG_REFRESH).render(**sql_injection_data)
         compression_query = Template(CAGG_COMPRESSION).render(**sql_injection_data)
@@ -1404,12 +1386,15 @@ class RateHandler(MetricHandler):
         organization = Organization.objects.get(id=metric.organization.id)
         sql_injection_data = {
             "cagg_name": (
-                ("org_" + organization.organization_id.hex)[:22]
-                + "___"
-                + ("metric_" + metric.metric_id.hex)[:22]
-                + "___"
+                (
+                    (
+                        (f"org_{organization.organization_id.hex}"[:22] + "___")
+                        + f"metric_{metric.metric_id.hex}"[:22]
+                    )
+                    + "___"
+                )
                 + "rate_cagg"
-            ),
+            )
         }
         query = Template(CAGG_DROP).render(**sql_injection_data)
         with connection.cursor() as cursor:

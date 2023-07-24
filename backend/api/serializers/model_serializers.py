@@ -73,12 +73,7 @@ from rest_framework.exceptions import ValidationError
 SVIX_CONNECTOR = settings.SVIX_CONNECTOR
 logger = logging.getLogger("django.server")
 USE_KAFKA = settings.USE_KAFKA
-if USE_KAFKA:
-    kafka_producer = Producer()
-else:
-    kafka_producer = None
-
-
+kafka_producer = Producer() if USE_KAFKA else None
 class TagNameSerializer(TimezoneFieldMixin, serializers.ModelSerializer):
     class Meta:
         model = Tag
@@ -142,8 +137,7 @@ class LightweightCustomerSerializerForInvoice(LightweightCustomerSerializer):
     address = serializers.SerializerMethodField(required=False, allow_null=True)
 
     def get_address(self, obj) -> AddressSerializer(allow_null=True, required=False):
-        billing_address = obj.get_billing_address()
-        if billing_address:
+        if billing_address := obj.get_billing_address():
             return AddressSerializer(billing_address).data
         return None
 
@@ -170,10 +164,7 @@ class LightweightPlanVersionSerializer(
         return str(obj)
 
     def get_version(self, obj) -> Union[int, Literal["custom_version"]]:
-        if obj.version == 0:
-            return "custom_version"
-        else:
-            return obj.version
+        return "custom_version" if obj.version == 0 else obj.version
 
 
 class LightweightPlanSerializer(
@@ -212,11 +203,10 @@ class SubscriptionFilterSerializer(
     )
 
     def to_representation(self, instance):
-        data = {
+        return {
             "property_name": instance[0],
             "value": instance[1],
         }
-        return data
 
 
 class SubscriptionCustomerSummarySerializer(
@@ -260,9 +250,7 @@ class LightweightAddOnSerializer(TimezoneFieldMixin, serializers.ModelSerializer
 
     def get_addon_type(self, obj) -> Literal["flat", "usage_based"]:
         version = obj.versions.first()
-        if version.plan_components.all().count() > 0:
-            return "usage_based"
-        return "flat"
+        return "usage_based" if version.plan_components.all().count() > 0 else "flat"
 
     def get_billing_frequency(
         self, obj
@@ -430,16 +418,14 @@ class InvoiceLineItemSerializer(
     def get_subscription_filters(
         self, obj
     ) -> SubscriptionFilterSerializer(many=True, allow_null=True):
-        ass_sub_record = obj.associated_subscription_record
-        if ass_sub_record:
+        if ass_sub_record := obj.associated_subscription_record:
             return SubscriptionFilterSerializer(
                 ass_sub_record.subscription_filters, many=True
             ).data
         return None
 
     def get_plan(self, obj) -> LightweightPlanVersionSerializer(allow_null=True):
-        ass_sub_record = obj.associated_subscription_record
-        if ass_sub_record:
+        if ass_sub_record := obj.associated_subscription_record:
             return LightweightPlanVersionSerializer(ass_sub_record.billing_plan).data
         return None
 
@@ -461,8 +447,7 @@ class SellerSerializer(
     address = serializers.SerializerMethodField(required=False, allow_null=True)
 
     def get_address(self, obj) -> AddressSerializer(allow_null=True, required=False):
-        billing_address = obj.get_address()
-        if billing_address:
+        if billing_address := obj.get_address():
             return AddressSerializer(billing_address).data
         return None
 
@@ -565,17 +550,16 @@ class InvoiceSerializer(
 
 
 class LightweightInvoiceSerializer(InvoiceSerializer):
+
+
+
     class Meta(InvoiceSerializer.Meta):
         fields = tuple(
-            set(InvoiceSerializer.Meta.fields)
-            - set(
-                [
-                    "line_items",
-                    "customer",
-                ]
-            )
+            (set(InvoiceSerializer.Meta.fields) - {"line_items", "customer"})
         )
         extra_kwargs = {**InvoiceSerializer.Meta.extra_kwargs}
+
+
 
 
 class CustomerStripeIntegrationSerializer(serializers.Serializer):
@@ -680,16 +664,14 @@ class CustomerSerializer(
     def get_billing_address(
         self, obj
     ) -> AddressSerializer(allow_null=True, required=True):
-        billing_address = obj.get_billing_address()
-        if billing_address:
+        if billing_address := obj.get_billing_address():
             return AddressSerializer(billing_address).data
         return None
 
     def get_shipping_address(
         self, obj
     ) -> AddressSerializer(allow_null=True, required=True):
-        shipping_address = obj.get_shipping_address()
-        if shipping_address:
+        if shipping_address := obj.get_shipping_address():
             return AddressSerializer(shipping_address).data
         return None
 
@@ -698,30 +680,25 @@ class CustomerSerializer(
     ) -> serializers.CharField(allow_null=True, required=True):
         d = self.get_integrations(obj)
         if obj.payment_provider == PAYMENT_PROCESSORS.STRIPE:
-            stripe_dict = d.get(PAYMENT_PROCESSORS.STRIPE)
-            if stripe_dict:
+            if stripe_dict := d.get(PAYMENT_PROCESSORS.STRIPE):
                 return stripe_dict["stripe_id"]
         elif obj.payment_provider == PAYMENT_PROCESSORS.BRAINTREE:
-            braintree_dict = d.get(PAYMENT_PROCESSORS.BRAINTREE)
-            if braintree_dict:
+            if braintree_dict := d.get(PAYMENT_PROCESSORS.BRAINTREE):
                 return braintree_dict["paypal_id"]
         return None
 
     def get_address(self, obj) -> AddressSerializer(allow_null=True, required=True):
-        billing_address = obj.get_billing_address()
-        if billing_address:
+        if billing_address := obj.get_billing_address():
             return AddressSerializer(billing_address).data
         return None
 
     def get_has_payment_method(self, obj) -> bool:
         d = self.get_integrations(obj)
         if obj.payment_provider == PAYMENT_PROCESSORS.STRIPE:
-            stripe_dict = d.get(PAYMENT_PROCESSORS.STRIPE)
-            if stripe_dict:
+            if stripe_dict := d.get(PAYMENT_PROCESSORS.STRIPE):
                 return stripe_dict["has_payment_method"]
         elif obj.payment_provider == PAYMENT_PROCESSORS.BRAINTREE:
-            braintree_dict = d.get(PAYMENT_PROCESSORS.BRAINTREE)
-            if braintree_dict:
+            if braintree_dict := d.get(PAYMENT_PROCESSORS.BRAINTREE):
                 return braintree_dict["has_payment_method"]
         return False
 
@@ -748,16 +725,16 @@ class CustomerSerializer(
         }
 
     def get_integrations(self, customer) -> CustomerIntegrationsSerializer:
-        d = {}
-        if customer.stripe_integration:
-            d[PAYMENT_PROCESSORS.STRIPE] = {
+        d = {
+            PAYMENT_PROCESSORS.STRIPE: {
                 "stripe_id": customer.stripe_integration.stripe_customer_id,
                 "has_payment_method": PAYMENT_PROCESSOR_MAP[
                     PAYMENT_PROCESSORS.STRIPE
                 ].has_payment_method(customer),
             }
-        else:
-            d[PAYMENT_PROCESSORS.STRIPE] = None
+            if customer.stripe_integration
+            else None
+        }
         if customer.braintree_integration:
             d[PAYMENT_PROCESSORS.BRAINTREE] = {
                 "braintree_id": customer.braintree_integration.braintree_customer_id,
@@ -863,14 +840,14 @@ class CustomerCreateSerializer(
                 raise serializers.ValidationError(
                     "Specified payment provider not connected to organization"
                 )
-            if payment_provider and not payment_provider_id:
-                raise serializers.ValidationError(
-                    "Payment provider ID required when payment provider is specified"
-                )
-            if payment_provider_id and not payment_provider:
-                raise serializers.ValidationError(
-                    "Payment provider required when payment provider ID is specified"
-                )
+        if payment_provider and not payment_provider_id:
+            raise serializers.ValidationError(
+                "Payment provider ID required when payment provider is specified"
+            )
+        if payment_provider_id and not payment_provider:
+            raise serializers.ValidationError(
+                "Payment provider required when payment provider ID is specified"
+            )
 
         return data
 
@@ -1340,22 +1317,13 @@ class PlanVersionSerializer(
             ).data
 
     def get_created_by(self, obj) -> str:
-        if obj.created_by is not None:
-            return obj.created_by.username
-        else:
-            return None
+        return obj.created_by.username if obj.created_by is not None else None
 
     def get_replace_with(self, obj) -> Union[str, None]:
-        if obj.replace_with is not None:
-            return str(obj.replace_with)
-        else:
-            return None
+        return str(obj.replace_with) if obj.replace_with is not None else None
 
     def get_version(self, obj) -> Union[int, Literal["custom_version"]]:
-        if obj.version == 0:
-            return "custom_version"
-        else:
-            return obj.version
+        return "custom_version" if obj.version == 0 else obj.version
 
     # DEPRECATED
     def get_usage_billing_frequency(self, obj) -> Union[str, None]:
@@ -1535,8 +1503,7 @@ class PlanSerializer(
 
     def get_num_versions(self, obj) -> int:
         try:
-            nv = len({x.version for x in obj.versions_prefetched if not x.is_custom})
-            return nv
+            return len({x.version for x in obj.versions_prefetched if not x.is_custom})
         except AttributeError:
             logger.error(
                 "PlanSerializer.get_num_versions() called without prefetching 'versions_prefetched'"
@@ -1551,13 +1518,13 @@ class PlanSerializer(
         try:
             now = now_utc()
             return max(
-                [
+                (
                     x.version
                     for x in obj.versions_prefetched
                     if not x.is_custom
                     and x.active_from <= now
                     and (x.active_to is None or x.active_to > now)
-                ],
+                ),
                 default=0,
             )
         except AttributeError:
@@ -1675,17 +1642,15 @@ class SubscriptionRecordCreateSerializerOld(
     )
 
     def validate(self, data):
-        # extract the plan version from the plan
-        if "plan_id" in data:
-            data["billing_plan"] = data.pop("plan_id").get_version_for_customer(
-                data["customer"]
-            )
-            if data["billing_plan"] is None:
-                raise serializers.ValidationError(
-                    "Unable to find a singular plan version that matches the plan_id. Please specify a version_id instead."
-                )
-        else:
+        if "plan_id" not in data:
             raise serializers.ValidationError("plan_id must be specified")
+        data["billing_plan"] = data.pop("plan_id").get_version_for_customer(
+            data["customer"]
+        )
+        if data["billing_plan"] is None:
+            raise serializers.ValidationError(
+                "Unable to find a singular plan version that matches the plan_id. Please specify a version_id instead."
+            )
         if data["billing_plan"].is_custom:
             if data["customer"] not in data["billing_plan"].target_customers.all():
                 raise serializers.ValidationError(
@@ -1695,12 +1660,11 @@ class SubscriptionRecordCreateSerializerOld(
 
     def create(self, validated_data):
         filters = validated_data.pop("subscription_filters", [])
-        subscription_filters = []
-        for filter_data in filters:
-            subscription_filters.append(
-                [filter_data["property_name"], filter_data["value"]]
-            )
-        sr = SubscriptionRecord.create_subscription_record(
+        subscription_filters = [
+            [filter_data["property_name"], filter_data["value"]]
+            for filter_data in filters
+        ]
+        return SubscriptionRecord.create_subscription_record(
             start_date=validated_data["start_date"],
             end_date=validated_data.get("end_date"),
             billing_plan=validated_data["billing_plan"],
@@ -1710,7 +1674,6 @@ class SubscriptionRecordCreateSerializerOld(
             subscription_filters=subscription_filters,
             quantity=validated_data.get("quantity", 1),
         )
-        return sr
 
 
 class ComponentsFixedChargeInitialValueSerializer(serializers.Serializer):
@@ -1826,11 +1789,10 @@ class SubscriptionRecordCreateSerializer(
 
     def create(self, validated_data):
         filters = validated_data.pop("subscription_filters", [])
-        subscription_filters = []
-        for filter_data in filters:
-            subscription_filters.append(
-                [filter_data["property_name"], filter_data["value"]]
-            )
+        subscription_filters = [
+            [filter_data["property_name"], filter_data["value"]]
+            for filter_data in filters
+        ]
         sr = SubscriptionRecord.create_subscription_record(
             start_date=validated_data["start_date"],
             end_date=validated_data.get("end_date"),
@@ -1850,11 +1812,17 @@ class SubscriptionRecordCreateSerializer(
 
 
 class LightweightSubscriptionRecordSerializer(SubscriptionRecordSerializer):
+
+
+
     class Meta(SubscriptionRecordSerializer.Meta):
         model = SubscriptionRecord
         fields = tuple(
-            set(SubscriptionRecordSerializer.Meta.fields).union(set(["plan_detail"]))
+            set(SubscriptionRecordSerializer.Meta.fields).union(
+                {"plan_detail"}
+            )
         )
+
 
     plan_detail = LightweightPlanVersionSerializer(
         source="billing_plan", read_only=True
@@ -1862,15 +1830,29 @@ class LightweightSubscriptionRecordSerializer(SubscriptionRecordSerializer):
     subscription_filters = SubscriptionFilterSerializer(many=True, read_only=True)
 
 
+
+
+
 class SubscriptionInvoiceSerializer(SubscriptionRecordSerializer):
+
+
+
     class Meta(SubscriptionRecordSerializer.Meta):
         model = SubscriptionRecord
         fields = tuple(
-            set(SubscriptionRecordSerializer.Meta.fields)
-            - set(
-                ["customer_id", "plan_id", "billing_plan", "auto_renew", "invoice_pdf"]
+            (
+                set(SubscriptionRecordSerializer.Meta.fields)
+                - {
+                    "customer_id",
+                    "plan_id",
+                    "billing_plan",
+                    "auto_renew",
+                    "invoice_pdf",
+                }
             )
         )
+
+
 
 
 class SubscriptionRecordUpdateSerializerOld(
@@ -2541,9 +2523,7 @@ class AddOnVersionSerializer(
         return obj.addon_spec.get_flat_fee_invoicing_behavior_on_attach_display()
 
     def get_addon_type(self, obj) -> Literal["usage_based", "flat"]:
-        if obj.plan_components.all().count() > 0:
-            return "usage_based"
-        return "flat"
+        return "usage_based" if obj.plan_components.all().count() > 0 else "flat"
 
     def get_billing_frequency(
         self, obj
@@ -2649,9 +2629,7 @@ class AddOnSerializer(TimezoneFieldMixin, serializers.ModelSerializer):
 
     def get_addon_type(self, obj) -> Literal["usage_based", "flat"]:
         version = obj.versions.first()
-        if version.plan_components.all().count() > 0:
-            return "usage_based"
-        return "flat"
+        return "usage_based" if version.plan_components.all().count() > 0 else "flat"
 
     def get_billing_frequency(
         self, obj

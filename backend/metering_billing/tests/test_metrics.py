@@ -94,14 +94,13 @@ def billable_metric_test_common_setup(
 
 @pytest.fixture
 def insert_billable_metric_payload():
-    payload = {
+    return {
         "event_name": "test_event",
         "property_name": "test_property",
         "usage_aggregation_type": METRIC_AGGREGATION.SUM,
         "metric_type": METRIC_TYPE.COUNTER,
         "metric_name": "test_billable_metric",
     }
-    return payload
 
 
 @pytest.mark.django_db(transaction=True)
@@ -267,7 +266,7 @@ class TestArchiveMetric:
         response = setup_dict["client"].patch(
             reverse(
                 "metric-detail",
-                kwargs={"metric_id": "metric_" + metric_set[0].metric_id.hex},
+                kwargs={"metric_id": f"metric_{metric_set[0].metric_id.hex}"},
             ),
             data=json.dumps(payload, cls=DjangoJSONEncoder),
             content_type="application/json",
@@ -284,7 +283,7 @@ class TestArchiveMetric:
         response = setup_dict["client"].patch(
             reverse(
                 "metric-detail",
-                kwargs={"metric_id": "metric_" + metric_set[0].metric_id.hex},
+                kwargs={"metric_id": f"metric_{metric_set[0].metric_id.hex}"},
             ),
             data=json.dumps(payload, cls=DjangoJSONEncoder),
             content_type="application/json",

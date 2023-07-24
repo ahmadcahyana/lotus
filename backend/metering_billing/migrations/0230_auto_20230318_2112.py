@@ -6,11 +6,10 @@ from django.db import migrations
 def transfer_filters_to_subscription_filters(apps, schema_editor):
     SubscriptionRecord = apps.get_model("metering_billing", "SubscriptionRecord")
     for subscription in SubscriptionRecord.objects.all():
-        new_filters = []
-        for sf in subscription.filters.all():
-            property_name = sf.property_name
-            value = sf.comparison_value[0]
-            new_filters.append([property_name, value])
+        new_filters = [
+            [sf.property_name, sf.comparison_value[0]]
+            for sf in subscription.filters.all()
+        ]
         subscription.subscription_filters = new_filters
         subscription.save()
 
