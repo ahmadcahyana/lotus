@@ -64,11 +64,11 @@ class CRMUnifiedAPIView(viewsets.GenericViewSet, mixins.RetrieveModelMixin):
         serializer = UpdateCRMSourceOfTruthSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         crm_provider_name = serializer.validated_data["crm_provider_name"]
-        lotus_is_source = serializer.validated_data["lotus_is_source"]
         if (
             crm_provider_name
             == UnifiedCRMOrganizationIntegration.CRMProvider.SALESFORCE.label
         ):
+            lotus_is_source = serializer.validated_data["lotus_is_source"]
             organization.lotus_is_customer_source_for_salesforce = lotus_is_source
             organization.save()
         return Response({"success": True})
@@ -202,7 +202,7 @@ def send_invoice_to_salesforce(invoice, customer, accountId, access_token):
     }
     url = "https://api.vessel.land/crm/note"
     body = {
-        "lotus_url": VITE_API_URL + f"customers/{customer.customer_id}",
+        "lotus_url": f"{VITE_API_URL}customers/{customer.customer_id}",
         "invoice_pdf": invoice.invoice_pdf,
     }
     note = {
@@ -226,7 +226,7 @@ def send_invoice_to_salesforce(invoice, customer, accountId, access_token):
         print(response.text)
         return
     unified_id = response.json()["id"]
-    get_url = url + f"?accessToken={access_token}&id={unified_id}"
+    get_url = f"{url}?accessToken={access_token}&id={unified_id}"
     response = requests.get(
         get_url,
         headers=headers,
@@ -297,13 +297,14 @@ def sync_customers_with_salesforce(organization):
                 },
             }
             if customer.shipping_address:
-                payload["additional"] = {}
-                payload["additional"]["ShippingAddress"] = {
-                    "street": customer.shipping_address.line1,
-                    "city": customer.shipping_address.city,
-                    "state": customer.shipping_address.state,
-                    "country": customer.shipping_address.country,
-                    "postalCode": customer.shipping_address.postal_code,
+                payload["additional"] = {
+                    "ShippingAddress": {
+                        "street": customer.shipping_address.line1,
+                        "city": customer.shipping_address.city,
+                        "state": customer.shipping_address.state,
+                        "country": customer.shipping_address.country,
+                        "postalCode": customer.shipping_address.postal_code,
+                    }
                 }
             if customer.billing_address:
                 if not payload.get("additional"):
@@ -323,7 +324,7 @@ def sync_customers_with_salesforce(organization):
                 # not in salesforce! We create
                 response = requests.post(url, headers=headers, data=json.dumps(payload))
                 unified_id = response.json()["id"]
-                get_url = url + f"?accessToken={access_token}&id={unified_id}"
+                get_url = f"{url}?accessToken={access_token}&id={unified_id}"
                 response = requests.get(
                     get_url,
                     headers=headers,

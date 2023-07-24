@@ -104,13 +104,11 @@ class LoginView(LoginViewMixin, APIView):
             )
 
         user_team = user.team
-        if not all(
-            [
-                x != Organization.OrganizationType.EXTERNAL_DEMO
-                for x in user_team.organizations.all().values_list(
-                    "organization_type", flat=True
-                )
-            ]
+        if any(
+            x == Organization.OrganizationType.EXTERNAL_DEMO
+            for x in user_team.organizations.all().values_list(
+                "organization_type", flat=True
+            )
         ):
             return JsonResponse(
                 {"detail": "Cannot login in to Lotus app with a demo account."},
@@ -293,10 +291,9 @@ class ResetPasswordView(APIView):
                 "Request must have the following parameters: (userId, password, token)"
             )
 
-        user = user_service.reset_password(
+        if user := user_service.reset_password(
             user_id=user_id, raw_password=raw_password, token=token
-        )
-        if user:
+        ):
             login(request, user)
             return Response(
                 {
@@ -327,9 +324,9 @@ class SessionView(APIView):
             "isAuthenticated": request.user.is_authenticated,
         }
         if request.user.is_authenticated:
-            resp["organization_id"] = (
-                "org_" + request.user.organization.organization_id.hex
-            )
+            resp[
+                "organization_id"
+            ] = f"org_{request.user.organization.organization_id.hex}"
         return JsonResponse(resp)
 
 
@@ -470,7 +467,7 @@ class DemoRegisterView(LoginViewMixin, APIView):
         username = reg_dict["username"]
         email = reg_dict["email"]
         password = reg_dict["password"]
-        organization_name = "demo_" + username  # different
+        organization_name = f"demo_{username}"
 
         existing_user_num = User.objects.filter(username=username).count()
         if existing_user_num > 0:

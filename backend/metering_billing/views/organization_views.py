@@ -54,8 +54,8 @@ class InviteView(APIView):
             token_object.user = user
             token_object.expire_at = now_plus_day()
             token_object.save()
-        path = "register?token=%s" % (token_object.token)
-        password_reset_url = "%s/%s" % (settings.APP_URL, path)
+        path = f"register?token={token_object.token}"
+        password_reset_url = f"{settings.APP_URL}/{path}"
 
         send_invite_email(
             reset_url=password_reset_url,
@@ -101,8 +101,8 @@ class InviteLinkView(APIView):
         if not created:
             token_object.user = user
             token_object.save()
-        path = "register?token=%s" % (token_object.token)
-        password_reset_url = "%s/%s" % (settings.APP_URL, path)
+        path = f"register?token={token_object.token}"
+        password_reset_url = f"{settings.APP_URL}/{path}"
 
         return Response(
             {"email": email, "link": password_reset_url}, status=status.HTTP_200_OK
@@ -126,7 +126,5 @@ def send_invite_email(reset_url, organization_name, to):
     except BadHeaderError:
         logger.error("Invalid header found.")
         return False
-
-    return True
 
     return True

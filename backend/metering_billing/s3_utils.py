@@ -16,7 +16,7 @@ def get_bucket_name(organization):
         ).count()
         > 0
     ):
-        bucket_name = "prod-" + team.team_id.hex + "-" + slugify(team.name)
+        bucket_name = f"prod-{team.team_id.hex}-{slugify(team.name)}"
         prod = True
     else:
         bucket_name = "dev"

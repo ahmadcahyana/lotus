@@ -10,14 +10,12 @@ def transfer_custom_plans(apps, schema_editor):
     for plan in Plan.objects.filter(target_customer__isnull=False):
         parent_plan = plan.parent_plan
         num_versions_in_parent = parent_plan.versions.count()
-        i = 1
-        for version in plan.versions.all():
+        for i, version in enumerate(plan.versions.all(), start=1):
             version.version = num_versions_in_parent + i
             version.plan = parent_plan
             version.target_customers.add(plan.target_customer)
             version.is_custom = True
             version.save()
-            i += 1
     Plan.objects.filter(target_customer__isnull=False).delete()
 
 

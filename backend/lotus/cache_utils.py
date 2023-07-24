@@ -76,13 +76,12 @@ class FallbackCache(BaseCache):
             logger.exception(e)
             if raise_err:
                 return self._call_fallback_cache(args, kwargs, method)
-            else:
-                try:
-                    return self._call_fallback_cache(args, kwargs, method)
-                except Exception as e:
-                    logger.warning("Fallback cache failed")
-                    logger.exception(e)
-                    return None
+            try:
+                return self._call_fallback_cache(args, kwargs, method)
+            except Exception as e:
+                logger.warning("Fallback cache failed")
+                logger.exception(e)
+                return None
 
     def _call_main_cache(self, args, kwargs, method):
         return getattr(self._cache, method)(*args, **kwargs)

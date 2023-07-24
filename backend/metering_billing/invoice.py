@@ -31,10 +31,7 @@ POSTHOG_PERSON = settings.POSTHOG_PERSON
 META = settings.META
 DEBUG = settings.DEBUG
 USE_KAFKA = settings.USE_KAFKA
-if USE_KAFKA:
-    kafka_producer = Producer()
-else:
-    kafka_producer = None
+kafka_producer = Producer() if USE_KAFKA else None
 
 
 def generate_invoice(
@@ -113,8 +110,9 @@ def generate_invoice(
         calculate_subscription_record_usage_fees(subscription_record, invoice, draft)
         # next plan flat fee calculation
         next_bp = find_next_billing_plan(subscription_record)
-        sr_renews = check_subscription_record_renews(subscription_record, issue_date)
-        if sr_renews:
+        if sr_renews := check_subscription_record_renews(
+            subscription_record, issue_date
+        ):
             if generate_next_subscription_record:
                 # actually make one, when we're actually invoicing
                 next_subscription_record = create_next_subscription_record(
@@ -143,8 +141,7 @@ def generate_invoice(
         finalize_invoice_amount(invoice, draft)
 
         if not draft:
-            new_inv = generate_external_payment_obj(invoice)
-            if new_inv:
+            if new_inv := generate_external_payment_obj(invoice):
                 invoice = new_inv
             for subscription_record in subscription_records:
                 if subscription_record.end_date <= now_utc():
@@ -196,11 +193,9 @@ def calculate_subscription_record_flat_fees(
         # we check how much has already been billed
         amt_already_invoiced = billing_record.amt_already_invoiced()
         if (
-            abs(amt_already_invoiced - flat_fee_due) < Decimal("0.01")
-            and amt_already_invoiced > 0
+            abs(amt_already_invoiced - flat_fee_due) >= Decimal("0.01")
+            or amt_already_invoiced <= 0
         ):
-            pass
-        else:
             billing_plan = subscription_record.billing_plan
             billing_plan_name = str(billing_plan)
             start = billing_record.start_date
@@ -377,12 +372,11 @@ def create_next_subscription_record(subscription_record, next_bp):
         .order_by("component", "-end_date")
         .distinct("component")
     )
-    component_fixed_charges_initial_units = []
-    for ccr in ccrs:
-        component_fixed_charges_initial_units.append(
-            {"metric": ccr.component.billable_metric, "units": ccr.units}
-        )
-    next_sr = SubscriptionRecord.create_subscription_record(
+    component_fixed_charges_initial_units = [
+        {"metric": ccr.component.billable_metric, "units": ccr.units}
+        for ccr in ccrs
+    ]
+    return SubscriptionRecord.create_subscription_record(
         start_date=start_date,
         end_date=None,
         billing_plan=next_bp,
@@ -394,7 +388,6 @@ def create_next_subscription_record(subscription_record, next_bp):
         component_fixed_charges_initial_units=component_fixed_charges_initial_units,
         do_generate_invoice=False,
     )
-    return next_sr
 
 
 def charge_next_plan_flat_fee(
@@ -464,7 +457,6 @@ def apply_plan_discounts(invoice):
     ).select_related("price_adjustment")
     for pv in pvs:
         if pv.price_adjustment:
-            price_adj_name = str(pv.price_adjustment)
             if (
                 pv.price_adjustment.price_adjustment_type
                 == PRICE_ADJUSTMENT_TYPE.PERCENTAGE
@@ -487,6 +479,7 @@ def apply_plan_discounts(invoice):
                 sub_records = SubscriptionRecord.objects.filter(
                     id__in=[sr["associated_subscription_record"] for sr in distinct_srs]
                 )
+                price_adj_name = str(pv.price_adjustment)
                 for sr in sub_records:
                     if (
                         pv.price_adjustment.price_adjustment_type
@@ -512,7 +505,6 @@ def apply_plan_discounts(invoice):
                             past_discount_items.aggregate(tot=Sum("base"))["tot"] or 0
                         )
                         discount_amount = new_total - total_due
-                        real_discount = discount_amount - already_discounted
                     else:
                         # this is everything we've charged with the plan/subscription
                         all_plan_line_items = InvoiceLineItem.objects.filter(
@@ -538,7 +530,7 @@ def apply_plan_discounts(invoice):
                         already_discounted = (
                             past_discount_items.aggregate(tot=Sum("base"))["tot"] or 0
                         )
-                        real_discount = discount_amount - already_discounted
+                    real_discount = discount_amount - already_discounted
                     if real_discount != 0:
                         InvoiceLineItem.objects.create(
                             name=f"{pv.plan.plan_name} {price_adj_name}",
@@ -777,8 +769,7 @@ def generate_external_payment_obj(invoice):
 
 def calculate_due_date(issue_date, organization):
     due_date = issue_date
-    grace_period = organization.payment_grace_period
-    if grace_period:
+    if grace_period := organization.payment_grace_period:
         due_date += relativedelta(days=grace_period)
         return due_date
 

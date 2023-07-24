@@ -181,22 +181,19 @@ class TaxProviderListField(models.CharField):
     def get_prep_value(self, value):
         if value is None or value == []:
             return ""
-        else:
-            if all(isinstance(v, int) for v in value):
-                return ",".join(str(val) for val in value)
-            else:
-                enum_dict = dict(self.enum.choices)
-                reverse_enum_dict = {v: k for k, v in enum_dict.items()}
-                int_list = [str(reverse_enum_dict[val]) for val in value]
-                return ",".join(int_list)
+        if all(isinstance(v, int) for v in value):
+            return ",".join(str(val) for val in value)
+        enum_dict = dict(self.enum.choices)
+        reverse_enum_dict = {v: k for k, v in enum_dict.items()}
+        int_list = [str(reverse_enum_dict[val]) for val in value]
+        return ",".join(int_list)
 
     def get_choices(self, include_blank=True, blank_choice=None, limit_choices_to=None):
         return self.enum.choices
 
     def value_to_string(self, obj):
         value = self.value_from_object(obj)
-        pv = self.get_prep_value(value)
-        return pv
+        return self.get_prep_value(value)
 
 
 class Organization(models.Model):
@@ -443,7 +440,7 @@ class WebhookEndpoint(models.Model):
                         "description": self.name,
                         "url": self.webhook_url,
                         "version": 1,
-                        "secret": "whsec_" + self.webhook_secret.hex,
+                        "secret": f"whsec_{self.webhook_secret.hex}",
                     }
                     if len(triggers) > 0:
                         endpoint_create_dict["filter_types"] = []
@@ -467,11 +464,11 @@ class WebhookEndpoint(models.Model):
                     )
 
                     svix_endpoint = svix_endpoint.__dict__
-                    svix_update_dict = {}
-                    svix_update_dict["uid"] = self.webhook_endpoint_id.hex
-                    svix_update_dict["description"] = self.name
-                    svix_update_dict["url"] = self.webhook_url
-
+                    svix_update_dict = {
+                        "uid": self.webhook_endpoint_id.hex,
+                        "description": self.name,
+                        "url": self.webhook_url,
+                    }
                     # triggers
                     svix_triggers = svix_endpoint.get("filter_types") or []
                     version = svix_endpoint.get("version")
@@ -518,9 +515,7 @@ class WebhookEndpoint(models.Model):
                 self.delete()
 
                 raise ExternalConnectionFailure(
-                    "Webhooks service failed to connect. Did not provision webhook endpoint. Error: {}".format(
-                        dictionary
-                    )
+                    f"Webhooks service failed to connect. Did not provision webhook endpoint. Error: {dictionary}"
                 )
 
 
@@ -712,7 +707,7 @@ class Customer(models.Model):
         ]
 
     def __str__(self) -> str:
-        return str(self.customer_name) + " " + str(self.customer_id)
+        return f"{str(self.customer_name)} {str(self.customer_id)}"
 
     def save(self, *args, **kwargs):
         if not self.default_currency:
@@ -728,10 +723,9 @@ class Customer(models.Model):
         super(Customer, self).save(*args, **kwargs)
 
     def get_active_subscription_records(self):
-        active_subscription_records = self.subscription_records.active().filter(
+        return self.subscription_records.active().filter(
             fully_billed=False,
         )
-        return active_subscription_records
 
     def get_tax_provider_values(self):
         return self.tax_providers
@@ -772,19 +766,18 @@ class Customer(models.Model):
                 draft=True,
                 charge_next_plan=True,
             )
-            total += sum([inv.amount for inv in invs])
+            total += sum(inv.amount for inv in invs)
             for inv in invs:
                 inv.delete()
         return total
 
     def get_currency_balance(self, currency):
         now = now_utc()
-        balance = self.customer_balance_adjustments.filter(
+        return self.customer_balance_adjustments.filter(
             Q(expires_at__gte=now) | Q(expires_at__isnull=True),
             effective_at__lte=now,
             amount_currency=currency,
         ).aggregate(balance=Sum("amount"))["balance"] or Decimal(0)
-        return balance
 
     def get_outstanding_revenue(self):
         unpaid_invoice_amount_due = (
@@ -792,8 +785,7 @@ class Customer(models.Model):
             .aggregate(unpaid_inv_amount=Sum("amount"))
             .get("unpaid_inv_amount")
         )
-        total_amount_due = unpaid_invoice_amount_due or 0
-        return total_amount_due
+        return unpaid_invoice_amount_due or 0
 
     def get_billing_address(self) -> Address:
         if self.payment_provider == PAYMENT_PROCESSORS.STRIPE:
@@ -1031,8 +1023,7 @@ class CustomerBalanceAdjustment(models.Model):
             .annotate(remaining_balance=F("amount") - F("drawn_down_amount"))
             .aggregate(total_balance=Sum("remaining_balance"))["total_balance"]
         )
-        total_balance = adjs or 0
-        return total_balance
+        return adjs or 0
 
 
 class IdempotenceCheck(models.Model):
@@ -1053,7 +1044,7 @@ class IdempotenceCheck(models.Model):
         ]
 
     def __str__(self):
-        return str(self.time_created)[:10] + "-" + str(self.idempotency_id)[:6]
+        return f"{str(self.time_created)[:10]}-{str(self.idempotency_id)[:6]}"
 
 
 class EventManager(models.Manager):
@@ -1326,9 +1317,7 @@ class Metric(models.Model):
             self.provision_materialized_views()
 
         handler = METRIC_HANDLER_MAP[self.metric_type]
-        usage = handler.get_billing_record_total_billable_usage(self, billing_record)
-
-        return usage
+        return handler.get_billing_record_total_billable_usage(self, billing_record)
 
     def get_billing_record_daily_billable_usage(self, billing_record):
         from metering_billing.aggregation.billable_metrics import METRIC_HANDLER_MAP
@@ -1337,9 +1326,7 @@ class Metric(models.Model):
             self.provision_materialized_views()
 
         handler = METRIC_HANDLER_MAP[self.metric_type]
-        usage = handler.get_billing_record_daily_billable_usage(self, billing_record)
-
-        return usage
+        return handler.get_billing_record_daily_billable_usage(self, billing_record)
 
     def get_billing_record_current_usage(self, billing_record):
         from metering_billing.aggregation.billable_metrics import METRIC_HANDLER_MAP
@@ -1348,9 +1335,7 @@ class Metric(models.Model):
             self.provision_materialized_views()
 
         handler = METRIC_HANDLER_MAP[self.metric_type]
-        usage = handler.get_billing_record_current_usage(self, billing_record)
-
-        return usage
+        return handler.get_billing_record_current_usage(self, billing_record)
 
     def get_daily_total_usage(
         self,
@@ -1365,11 +1350,9 @@ class Metric(models.Model):
             self.provision_materialized_views()
 
         handler = METRIC_HANDLER_MAP[self.metric_type]
-        usage = handler.get_daily_total_usage(
+        return handler.get_daily_total_usage(
             self, start_date, end_date, customer, top_n
         )
-
-        return usage
 
     def refresh_materialized_views(self):
         from metering_billing.aggregation.billable_metrics import METRIC_HANDLER_MAP
@@ -1477,7 +1460,7 @@ class PriceTier(models.Model):
                     raise ValidationError("First tier must start at 0")
             else:
                 diff = start - ranges[i - 1][1]
-                if diff != Decimal(0) and diff != Decimal(1):
+                if diff not in [Decimal(0), Decimal(1)]:
                     raise ValidationError(
                         "Tier ranges must be continuous or separated by 1"
                     )
@@ -1927,19 +1910,18 @@ class Invoice(models.Model):
             issue_date = self.issue_date.date()
             issue_date_string = issue_date.strftime("%y%m%d")
             next_invoice_number = "000001"
-            last_invoice = (
+            if last_invoice := (
                 Invoice.objects.filter(
                     invoice_number__startswith=issue_date_string,
                     organization=self.organization,
                 )
                 .order_by("-invoice_number")
                 .first()
-            )
-            if last_invoice:
+            ):
                 last_invoice_number = int(last_invoice.invoice_number[7:])
                 next_invoice_number = "{0:06d}".format(last_invoice_number + 1)
 
-            self.invoice_number = issue_date_string + "-" + next_invoice_number
+            self.invoice_number = f"{issue_date_string}-{next_invoice_number}"
         super().save(*args, **kwargs)
         if (
             self.__original_payment_status != self.payment_status
@@ -2048,11 +2030,11 @@ class InvoiceLineItem(models.Model):
     metadata = models.JSONField(default=dict, blank=True, null=True)
 
     def __str__(self):
-        return self.name + " " + str(self.invoice.invoice_number) + f"[{self.base}]"
+        return f"{self.name} {str(self.invoice.invoice_number)}" + f"[{self.base}]"
 
     def save(self, *args, **kwargs):
         self.amount = self.base + sum(
-            [adjustment.amount for adjustment in self.adjustments.all()]
+            adjustment.amount for adjustment in self.adjustments.all()
         )
         super().save(*args, **kwargs)
 
@@ -2067,7 +2049,7 @@ class APIToken(AbstractAPIKey):
         verbose_name_plural = "API Tokens"
 
     def __str__(self):
-        return str(self.name) + " " + str(self.organization.organization_name)
+        return f"{str(self.name)} {str(self.organization.organization_name)}"
 
 
 class TeamInviteToken(models.Model):
@@ -2082,7 +2064,7 @@ class TeamInviteToken(models.Model):
     expire_at = models.DateTimeField(default=now_plus_day, null=False, blank=False)
 
     def __str__(self):
-        return str(self.email) + " - " + str(self.team)
+        return f"{str(self.email)} - {str(self.team)}"
 
 
 class RecurringCharge(models.Model):
@@ -2142,7 +2124,7 @@ class RecurringCharge(models.Model):
     invoicing_interval_count = models.PositiveSmallIntegerField(null=True, blank=True)
 
     def __str__(self):
-        return self.name + " [" + str(self.plan_version) + "]"
+        return f"{self.name} [{str(self.plan_version)}]"
 
     class Meta:
         constraints = [
@@ -2423,13 +2405,10 @@ class PlanVersion(models.Model):
         ]
 
     def __str__(self) -> str:
-        if self.localized_name is not None:
-            return self.localized_name
-        return str(self.plan)
+        return str(self.plan) if self.localized_name is None else self.localized_name
 
     def num_active_subs(self):
-        cnt = self.subscription_records.active().count()
-        return cnt
+        return self.subscription_records.active().count()
 
     def is_active(self, time=None):
         if time is None:
@@ -2444,29 +2423,32 @@ class PlanVersion(models.Model):
             return PLAN_VERSION_STATUS.DELETED
         if not self.active_from:
             return PLAN_VERSION_STATUS.INACTIVE
-        if self.active_from <= now:
-            if self.active_to is None or self.active_to > now:
-                return PLAN_VERSION_STATUS.ACTIVE
-            else:
-                n_active_subs = self.num_active_subs()
-                if self.replace_with is None:
-                    if n_active_subs > 0:
-                        # SHOULD NEVER HAPPEN. EXPIRED PLAN, ACTIVE SUBS, NO REPLACEMENT
-                        return PLAN_VERSION_STATUS.GRANDFATHERED
-                    else:
-                        return PLAN_VERSION_STATUS.INACTIVE
-                elif self.replace_with == self:
-                    if n_active_subs > 0:
-                        return PLAN_VERSION_STATUS.GRANDFATHERED
-                    else:
-                        return PLAN_VERSION_STATUS.INACTIVE
-                else:
-                    if n_active_subs > 0:
-                        return PLAN_VERSION_STATUS.RETIRING
-                    else:
-                        return PLAN_VERSION_STATUS.INACTIVE
-        else:
+        if self.active_from > now:
             return PLAN_VERSION_STATUS.INACTIVE
+        if self.active_to is None or self.active_to > now:
+            return PLAN_VERSION_STATUS.ACTIVE
+        n_active_subs = self.num_active_subs()
+        if (
+            self.replace_with is not None
+            and self.replace_with == self
+            and n_active_subs > 0
+        ):
+            return PLAN_VERSION_STATUS.GRANDFATHERED
+        elif (
+            self.replace_with is not None
+            and self.replace_with == self
+            or self.replace_with is not None
+            and n_active_subs <= 0
+        ):
+            return PLAN_VERSION_STATUS.INACTIVE
+        elif self.replace_with is not None:
+            return PLAN_VERSION_STATUS.RETIRING
+        else:
+            return (
+                PLAN_VERSION_STATUS.GRANDFATHERED
+                if n_active_subs > 0
+                else PLAN_VERSION_STATUS.INACTIVE
+            )
 
 
 class PriceAdjustment(models.Model):
@@ -2484,14 +2466,11 @@ class PriceAdjustment(models.Model):
     )
 
     def __str__(self):
-        if self.price_adjustment_name != "":
-            return str(self.price_adjustment_name)
-        else:
-            return (
-                str(round(self.price_adjustment_amount, 2))
-                + " "
-                + str(self.price_adjustment_type)
-            )
+        return (
+            str(self.price_adjustment_name)
+            if self.price_adjustment_name != ""
+            else f"{str(round(self.price_adjustment_amount, 2))} {str(self.price_adjustment_type)}"
+        )
 
     def apply(self, amount):
         if self.price_adjustment_type == PRICE_ADJUSTMENT_TYPE.PERCENTAGE:
@@ -2664,7 +2643,7 @@ class Plan(models.Model):
     def active_subs_by_version(self):
         versions = self.versions.all().prefetch_related("subscription_records")
         now = now_utc()
-        versions_count = versions.annotate(
+        return versions.annotate(
             active_subscriptions=Count(
                 "subscription_record",
                 filter=Q(
@@ -2674,7 +2653,6 @@ class Plan(models.Model):
                 output_field=models.IntegerField(),
             )
         )
-        return versions_count
 
     def get_version_for_customer(self, customer) -> Optional[PlanVersion]:
         versions = self.versions.active().prefetch_related(
@@ -2881,7 +2859,7 @@ class SubscriptionRecord(models.Model):
     def __str__(self):
         addon = "[ADDON] " if self.billing_plan.addon_spec else ""
         if self.stripe_subscription_id:
-            plan_name = "Stripe Subscription {}".format(self.stripe_subscription_id)
+            plan_name = f"Stripe Subscription {self.stripe_subscription_id}"
         else:
             plan_name = self.billing_plan.plan.plan_name
         return f"{addon}{self.customer.customer_name}  {plan_name} : {self.start_date.date()} to {self.end_date.date()}"
@@ -3033,16 +3011,11 @@ class SubscriptionRecord(models.Model):
             == RecurringCharge.ChargeTimingType.IN_ADVANCE
         ):
             addon_spec = recurring_charge.plan_version.addon_spec
-            if (
-                addon_spec
-                and addon_spec.flat_fee_invoicing_behavior_on_attach
-                == AddOnSpecification.FlatFeeInvoicingBehaviorOnAttach.INVOICE_ON_SUBSCRIPTION_END
-            ):
-                # this is the ONLY case where its in advance and we don't want to append the range start. in this case they explicitly do not want to charge the flat fee on attach
-                append_range_start = False
-            else:
-                append_range_start = True
-
+            append_range_start = (
+                not addon_spec
+                or addon_spec.flat_fee_invoicing_behavior_on_attach
+                != AddOnSpecification.FlatFeeInvoicingBehaviorOnAttach.INVOICE_ON_SUBSCRIPTION_END
+            )
         invoicing_dates = recurring_charge.get_recurring_charge_invoicing_dates(
             self, append_range_start
         )
@@ -3122,8 +3095,7 @@ class SubscriptionRecord(models.Model):
                 )
 
     def get_filters_dictionary(self):
-        filters_dict = {f[0]: f[1] for f in self.subscription_filters}
-        return filters_dict
+        return {f[0]: f[1] for f in self.subscription_filters}
 
     def amt_already_invoiced(self):
         billed_invoices = self.line_items.filter(
@@ -3195,24 +3167,20 @@ class SubscriptionRecord(models.Model):
 
     @staticmethod
     def _billing_record_cancel_protocol(billing_record, cancel_date, invoice_now=True):
-        if billing_record.start_date >= cancel_date:
+        if (
+            billing_record.start_date < cancel_date
+            and billing_record.end_date < cancel_date
+            and invoice_now
+            or billing_record.start_date < cancel_date
+            and billing_record.end_date >= cancel_date
+        ):
+            billing_record.cancel_billing_record(
+                cancel_date=cancel_date,
+                change_invoice_date_to_cancel_date=invoice_now,
+            )
+        elif billing_record.start_date >= cancel_date:
             # this billing record hasn't started yet, so we can just delete it
             billing_record.delete()
-        elif billing_record.end_date < cancel_date:
-            # this billing record has already ended, so we can just check if we should invoice it now or not.
-            if invoice_now:
-                billing_record.cancel_billing_record(
-                    cancel_date=cancel_date,
-                    change_invoice_date_to_cancel_date=invoice_now,
-                )
-            else:
-                # we don't want to invoice it now, so we can just leave the old invoice date
-                pass
-        else:
-            # this means it's currently active
-            billing_record.cancel_billing_record(
-                cancel_date=cancel_date, change_invoice_date_to_cancel_date=invoice_now
-            )
 
     @staticmethod
     def _check_should_transfer_cancel_if_not(
@@ -3229,9 +3197,6 @@ class SubscriptionRecord(models.Model):
                     cancel_date=cancel_date,
                     change_invoice_date_to_cancel_date=invoice_now,
                 )
-            else:
-                # we don't want to invoice it now, so we can just leave the old invoice date
-                pass
             return False
         return True
 
@@ -3292,11 +3257,9 @@ class SubscriptionRecord(models.Model):
             else:
                 metric = component.billable_metric
                 if metric in new_version_metrics_map:
-                    # if the metric is in the new plan, we perform the surgery to switch the billing record to the new plan. Don't create from scratch.
-                    transfer = SubscriptionRecord._check_should_transfer_cancel_if_not(
+                    if transfer := SubscriptionRecord._check_should_transfer_cancel_if_not(
                         billing_record, now, invoice_now=invoice_now
-                    )
-                    if transfer:
+                    ):
                         new_component = new_version_metrics_map[metric]
                         pcs_to_create_charges_for.remove(new_component)
                         new_billing_records = sr._create_component_billing_records(
@@ -3483,8 +3446,7 @@ class BillingRecord(models.Model):
         kwargs = {}
         if ccr is not None:
             kwargs["prepaid_units"] = ccr.units
-        plan_component_summary = self.component.calculate_total_revenue(self, **kwargs)
-        return plan_component_summary
+        return self.component.calculate_total_revenue(self, **kwargs)
 
     def calculate_recurring_charge_due(self, proration_end_date):
         assert (
@@ -3501,40 +3463,36 @@ class BillingRecord(models.Model):
             * convert_to_decimal(proration_factor)
         )
         full_amount = self.recurring_charge.amount * self.subscription.quantity
-        if (
-            self.subscription.flat_fee_behavior is not None
-        ):  # this overrides other behavior
-            if self.subscription.flat_fee_behavior == FLAT_FEE_BEHAVIOR.REFUND:
-                return Decimal(0.0)
-            elif self.subscription.flat_fee_behavior == FLAT_FEE_BEHAVIOR.CHARGE_FULL:
-                return full_amount
-            else:
-                return prorated_amount
-        else:  # dont worry about invoice timing here, thats the problem of the invoice
-            if (
-                self.recurring_charge.charge_behavior
-                == RecurringCharge.ChargeBehaviorType.PRORATE
-            ):
-                return prorated_amount
-            else:
-                return full_amount
+        if self.subscription.flat_fee_behavior is None:
+            return (
+                prorated_amount
+                if (
+                    self.recurring_charge.charge_behavior
+                    == RecurringCharge.ChargeBehaviorType.PRORATE
+                )
+                else full_amount
+            )
+        if self.subscription.flat_fee_behavior == FLAT_FEE_BEHAVIOR.REFUND:
+            return Decimal(0.0)
+        elif self.subscription.flat_fee_behavior == FLAT_FEE_BEHAVIOR.CHARGE_FULL:
+            return full_amount
+        else:
+            return prorated_amount
 
     def handle_invoicing(self, invoice_date):
-        if self.next_invoicing_date < invoice_date:
-            found_next = False
-            for invoicing_date in sorted(self.invoicing_dates):
-                if invoicing_date > invoice_date:
-                    self.next_invoicing_date = invoicing_date
-                    self.save()
-                    found_next = True
-                    break
-            if not found_next:
-                self.fully_billed = True
-                self.next_invoicing_date = self.invoicing_dates[-1]
+        if self.next_invoicing_date >= invoice_date:
+            return
+        found_next = False
+        for invoicing_date in sorted(self.invoicing_dates):
+            if invoicing_date > invoice_date:
+                self.next_invoicing_date = invoicing_date
                 self.save()
-        else:
-            # do nothing, we have an invociing date coming up. This invoice was likely from attaching a subscription or something
-            pass
+                found_next = True
+                break
+        if not found_next:
+            self.fully_billed = True
+            self.next_invoicing_date = self.invoicing_dates[-1]
+            self.save()
 
     def calculate_earned_revenue_per_day(self) -> dict:
         dates = dates_bwn_two_dts(self.start_date, self.end_date)
@@ -3643,9 +3601,7 @@ class BillingRecord(models.Model):
             total_amt = component.tier_rating_function(component_charge_record.units)
         # 2. how much has been invoiced already
         amt_already_invoiced = self.prepaid_already_invoiced()
-        # 3. how much is left to invoice
-        amt_left_to_invoice = total_amt - amt_already_invoiced
-        return amt_left_to_invoice
+        return total_amt - amt_already_invoiced
 
 
 class ComponentChargeRecord(models.Model):
@@ -4101,18 +4057,17 @@ class UnifiedCRMCustomerIntegration(models.Model):
     def get_crm_url(self):
         if (
             self.crm_provider
-            == UnifiedCRMOrganizationIntegration.CRMProvider.SALESFORCE
+            != UnifiedCRMOrganizationIntegration.CRMProvider.SALESFORCE
         ):
-            if self.native_customer_id is None:
-                return None
-            objectType = "Account"
-            objectId = self.native_customer_id
-            nativeOrgURL = self.organization.unified_crm_organization_links.get(
-                crm_provider=self.crm_provider
-            ).native_org_url
-            return f"{nativeOrgURL}/lightning/r/{objectType}/{objectId}/view"
-        else:
             raise NotImplementedError("CRM type not supported")
+        if self.native_customer_id is None:
+            return None
+        objectType = "Account"
+        objectId = self.native_customer_id
+        nativeOrgURL = self.organization.unified_crm_organization_links.get(
+            crm_provider=self.crm_provider
+        ).native_org_url
+        return f"{nativeOrgURL}/lightning/r/{objectType}/{objectId}/view"
 
 
 class UnifiedCRMInvoiceIntegration(models.Model):
@@ -4130,15 +4085,14 @@ class UnifiedCRMInvoiceIntegration(models.Model):
     def get_crm_url(self):
         if (
             self.crm_provider
-            == UnifiedCRMOrganizationIntegration.CRMProvider.SALESFORCE
+            != UnifiedCRMOrganizationIntegration.CRMProvider.SALESFORCE
         ):
-            if self.native_invoice_id is None:
-                return None
-            objectType = "Note"
-            objectId = self.native_invoice_id
-            nativeOrgURL = self.organization.unified_crm_organization_links.get(
-                crm_provider=self.crm_provider
-            ).native_org_url
-            return f"{nativeOrgURL}/lightning/r/{objectType}/{objectId}/view"
-        else:
             raise NotImplementedError("CRM type not supported")
+        if self.native_invoice_id is None:
+            return None
+        objectType = "Note"
+        objectId = self.native_invoice_id
+        nativeOrgURL = self.organization.unified_crm_organization_links.get(
+            crm_provider=self.crm_provider
+        ).native_org_url
+        return f"{nativeOrgURL}/lightning/r/{objectType}/{objectId}/view"

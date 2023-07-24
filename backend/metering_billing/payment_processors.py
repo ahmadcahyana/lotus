@@ -51,8 +51,7 @@ VITE_API_URL = settings.VITE_API_URL
 def base64_encode(data: str) -> str:
     string_bytes = data.encode("ascii")
     base64_bytes = base64.b64encode(string_bytes)
-    base64_string = base64_bytes.decode("ascii")
-    return base64_string
+    return base64_bytes.decode("ascii")
 
 
 class PaymentProcesor(abc.ABC):
@@ -204,25 +203,24 @@ class BraintreeConnector(PaymentProcesor):
     def organization_connected(self, organization) -> bool:
         from metering_billing.models import Organization
 
-        id_in = organization.braintree_integration is not None
         if self.self_hosted:
-            if (
-                organization.organization_type
-                == Organization.OrganizationType.PRODUCTION
-            ):
-                return (
+            return (
+                (
                     self.live_merchant_id is not None
                     and self.live_public_key is not None
                     and self.live_private_key is not None
                 )
-            else:
-                return (
+                if (
+                    organization.organization_type
+                    == Organization.OrganizationType.PRODUCTION
+                )
+                else (
                     self.test_merchant_id is not None
                     and self.test_public_key is not None
                     and self.test_private_key is not None
                 )
-        else:
-            return id_in
+            )
+        return organization.braintree_integration is not None
 
     def get_connection_id(self, organization) -> str:
         return organization.organization_id.hex
@@ -239,50 +237,49 @@ class BraintreeConnector(PaymentProcesor):
         else:
             stored_id = organization.braintree_integration.braintree_merchant_id
 
-        if self.self_hosted:
-            if (
-                organization.organization_type
-                == Organization.OrganizationType.PRODUCTION
-            ):
-                if (
-                    stored_id != self.live_merchant_id
-                    and self.live_merchant_id is not None
-                ):
-                    if stored_id is None:
-                        organization.braintree_integration = (
-                            BraintreeOrganizationIntegration.objects.create(
-                                organization=organization,
-                                braintree_merchant_id=self.live_merchant_id,
-                            )
-                        )
-                        organization.save()
-                    else:
-                        organization.braintree_integration.braintree_merchant_id = (
-                            self.live_merchant_id
-                        )
-                        organization.braintree_integration.save()
-                return self.live_merchant_id
-            else:
-                if (
-                    stored_id != self.test_merchant_id
-                    and self.test_merchant_id is not None
-                ):
-                    if stored_id is None:
-                        organization.braintree_integration = (
-                            BraintreeOrganizationIntegration.objects.create(
-                                organization=organization,
-                                braintree_merchant_id=self.test_merchant_id,
-                            )
-                        )
-                        organization.save()
-                    else:
-                        organization.braintree_integration.braintree_merchant_id = (
-                            self.test_merchant_id
-                        )
-                        organization.braintree_integration.save()
-                return self.test_merchant_id
-        else:
+        if not self.self_hosted:
             return stored_id
+        if (
+            organization.organization_type
+            == Organization.OrganizationType.PRODUCTION
+        ):
+            if (
+                stored_id != self.live_merchant_id
+                and self.live_merchant_id is not None
+            ):
+                if stored_id is None:
+                    organization.braintree_integration = (
+                        BraintreeOrganizationIntegration.objects.create(
+                            organization=organization,
+                            braintree_merchant_id=self.live_merchant_id,
+                        )
+                    )
+                    organization.save()
+                else:
+                    organization.braintree_integration.braintree_merchant_id = (
+                        self.live_merchant_id
+                    )
+                    organization.braintree_integration.save()
+            return self.live_merchant_id
+        else:
+            if (
+                stored_id != self.test_merchant_id
+                and self.test_merchant_id is not None
+            ):
+                if stored_id is None:
+                    organization.braintree_integration = (
+                        BraintreeOrganizationIntegration.objects.create(
+                            organization=organization,
+                            braintree_merchant_id=self.test_merchant_id,
+                        )
+                    )
+                    organization.save()
+                else:
+                    organization.braintree_integration.braintree_merchant_id = (
+                        self.test_merchant_id
+                    )
+                    organization.braintree_integration.save()
+            return self.test_merchant_id
 
     def _get_config_key(self, organization):
         from metering_billing.models import Organization
@@ -300,8 +297,7 @@ class BraintreeConnector(PaymentProcesor):
         url = f"https://api.nango.dev/connection/{connection_id}?provider_config_key={self._get_config_key(organization)}"
 
         resp = requests.get(url, headers=headers).json()
-        access_token = resp["credentials"]["access_token"]
-        return access_token
+        return resp["credentials"]["access_token"]
 
     def _get_merchant_id(self, organization) -> str:
         connection_id = self.get_connection_id(organization)
@@ -311,38 +307,34 @@ class BraintreeConnector(PaymentProcesor):
         url = f"https://api.nango.dev/connection/{connection_id}?provider_config_key={self._get_config_key(organization)}"
 
         resp = requests.get(url, headers=headers).json()
-        access_token = resp["metadata"]["merchantId"]
-        return access_token
+        return resp["metadata"]["merchantId"]
 
     def _get_gateway(self, organization) -> braintree.BraintreeGateway:
         from metering_billing.models import Organization
 
-        if self.self_hosted:
+        if not self.self_hosted:
+            return braintree.BraintreeGateway(
+                access_token=self._get_access_token(organization)
+            )
+        config = (
+            braintree.Configuration(
+                braintree.Environment.Production,
+                merchant_id=self.live_merchant_id,
+                public_key=self.live_public_key,
+                private_key=self.live_private_key,
+            )
             if (
                 organization.organization_type
                 == Organization.OrganizationType.PRODUCTION
-            ):
-                config = braintree.Configuration(
-                    braintree.Environment.Production,
-                    merchant_id=self.live_merchant_id,
-                    public_key=self.live_public_key,
-                    private_key=self.live_private_key,
-                )
-                gateway = braintree.BraintreeGateway(config)
-
-            else:
-                config = braintree.Configuration(
-                    braintree.Environment.Sandbox,
-                    merchant_id=self.test_merchant_id,
-                    public_key=self.test_public_key,
-                    private_key=self.test_private_key,
-                )
-                gateway = braintree.BraintreeGateway(config)
-        else:
-            gateway = braintree.BraintreeGateway(
-                access_token=self._get_access_token(organization)
             )
-        return gateway
+            else braintree.Configuration(
+                braintree.Environment.Sandbox,
+                merchant_id=self.test_merchant_id,
+                public_key=self.test_public_key,
+                private_key=self.test_private_key,
+            )
+        )
+        return braintree.BraintreeGateway(config)
 
     # IMPORT METHODS
 
@@ -361,17 +353,16 @@ class BraintreeConnector(PaymentProcesor):
             for braintree_customer in all_braintree_customers.items:
                 braintree_id = braintree_customer.id
                 braintree_email = braintree_customer.email
-                braintree_first_name = braintree_customer.first_name
-                braintree_last_name = braintree_customer.last_name
-                customer = Customer.objects.filter(
+                if customer := Customer.objects.filter(
                     Q(braintree_integration__braintree_customer_id=braintree_id)
                     | (Q(email=braintree_email) & Q(email__isnull=False)),
                     organization=organization,
-                ).first()
-                if customer:  # customer exists in system already
+                ).first():
                     customer.payment_provider = PAYMENT_PROCESSORS.BRAINTREE
                     customer.save()
                 else:
+                    braintree_first_name = braintree_customer.first_name
+                    braintree_last_name = braintree_customer.last_name
                     try:
                         integration = BraintreeCustomerIntegration.objects.create(
                             braintree_customer_id=braintree_id,
@@ -554,7 +545,7 @@ class BraintreeConnector(PaymentProcesor):
                 60 * 60 * 24,
             )
         address = next(iter(cust_dict.get("addresses", [])), {})
-        addy = Address(
+        return Address(
             city=address.get("locality"),
             country=address.get("country_code_alpha2"),
             line1=address.get("street_address"),
@@ -562,7 +553,6 @@ class BraintreeConnector(PaymentProcesor):
             postal_code=address.get("postal_code"),
             state=address.get("region"),
         )
-        return addy
 
     def get_organization_address(
         self,
@@ -581,7 +571,7 @@ class BraintreeConnector(PaymentProcesor):
                 60 * 60 * 24,
             )
         address = acct_dict.get("business_details", {}).get("address_details", {})
-        addy = Address(
+        return Address(
             city=address.get("locality"),
             country=address.get("country_code_alpha2"),
             line1=address.get("street_address"),
@@ -589,7 +579,6 @@ class BraintreeConnector(PaymentProcesor):
             postal_code=address.get("postal_code"),
             state=address.get("region"),
         )
-        return addy
 
     def retrieve_account(self, organization):
         gateway = self._get_gateway(organization)
@@ -658,7 +647,7 @@ class StripeConnector(PaymentProcesor):
         redirect_dict = {
             "response_type": "code",
             "scope": "read_write",
-            "redirect_uri": VITE_API_URL + "redirectstripe",
+            "redirect_uri": f"{VITE_API_URL}redirectstripe",
         }
         live_qstr = urlencode(
             {
@@ -674,10 +663,10 @@ class StripeConnector(PaymentProcesor):
         )
         if not self.self_hosted:
             self.live_redirect_url = (
-                "https://connect.stripe.com/oauth/authorize?" + live_qstr
+                f"https://connect.stripe.com/oauth/authorize?{live_qstr}"
             )
             self.test_redirect_url = (
-                "https://connect.stripe.com/oauth/authorize?" + test_qstr
+                f"https://connect.stripe.com/oauth/authorize?{test_qstr}"
             )
         else:
             self.live_redirect_url = None
@@ -698,23 +687,22 @@ class StripeConnector(PaymentProcesor):
     def organization_connected(self, organization) -> bool:
         from metering_billing.models import Organization
 
-        id_in = organization.stripe_integration is not None
         if self.self_hosted:
-            if (
-                organization.organization_type
-                == Organization.OrganizationType.PRODUCTION
-            ):
-                return (
+            return (
+                (
                     self.live_secret_key is not None
                     and self.stripe_account_id is not None
                 )
-            else:
-                return (
+                if (
+                    organization.organization_type
+                    == Organization.OrganizationType.PRODUCTION
+                )
+                else (
                     self.test_secret_key is not None
                     and self.stripe_account_id is not None
                 )
-        else:
-            return id_in
+            )
+        return organization.stripe_integration is not None
 
     def get_connection_id(self, organization) -> str:
         # Since stripe doesn't use Nango, this doesn't truly matter, but we pass back anyway
@@ -729,27 +717,26 @@ class StripeConnector(PaymentProcesor):
         else:
             stored_id = None
 
-        if self.self_hosted:
-            if (
-                stored_id != self.stripe_account_id
-                and self.stripe_account_id is not None
-            ):
-                if stored_id is None:
-                    organization.stripe_integration = (
-                        StripeOrganizationIntegration.objects.create(
-                            organization=organization,
-                            stripe_account_id=self.stripe_account_id,
-                        )
-                    )
-                    organization.save()
-                else:
-                    organization.stripe_integration.stripe_account_id = (
-                        self.stripe_account_id
-                    )
-                    organization.stripe_integration.save()
-            return self.stripe_account_id
-        else:
+        if not self.self_hosted:
             return stored_id
+        if (
+            stored_id != self.stripe_account_id
+            and self.stripe_account_id is not None
+        ):
+            if stored_id is None:
+                organization.stripe_integration = (
+                    StripeOrganizationIntegration.objects.create(
+                        organization=organization,
+                        stripe_account_id=self.stripe_account_id,
+                    )
+                )
+                organization.save()
+            else:
+                organization.stripe_integration.stripe_account_id = (
+                    self.stripe_account_id
+                )
+                organization.stripe_integration.save()
+        return self.stripe_account_id
 
     def update_payment_object_status(self, organization, payment_object_id):
         from metering_billing.models import Invoice, Organization
@@ -781,9 +768,7 @@ class StripeConnector(PaymentProcesor):
             stripe.api_key = self.live_secret_key
         else:
             stripe.api_key = self.test_secret_key
-        customer = stripe.Customer.retrieve(external_id, **customer_payload)
-
-        return customer
+        return stripe.Customer.retrieve(external_id, **customer_payload)
 
     def has_payment_method(self, customer) -> bool:
         stripe_id = customer.stripe_integration.stripe_customer_id
@@ -848,7 +833,7 @@ class StripeConnector(PaymentProcesor):
                 60 * 60 * 24,
             )
         address = cust_dict.get(key, {}) or {}
-        addy = Address(
+        return Address(
             city=address.get("city"),
             country=address.get("country"),
             line1=address.get("line1"),
@@ -856,7 +841,6 @@ class StripeConnector(PaymentProcesor):
             postal_code=address.get("postal_code"),
             state=address.get("state"),
         )
-        return addy
 
     def get_organization_address(
         self,
@@ -875,7 +859,7 @@ class StripeConnector(PaymentProcesor):
                 60 * 60 * 24,
             )
         address = acct_dict.get("company", {}).get("address")
-        addy = Address(
+        return Address(
             city=address.get("city"),
             country=address.get("country"),
             line1=address.get("line1"),
@@ -883,7 +867,6 @@ class StripeConnector(PaymentProcesor):
             postal_code=address.get("postal_code"),
             state=address.get("state"),
         )
-        return addy
 
     def retrieve_account(self, organization):
         from metering_billing.models import Organization
@@ -897,9 +880,7 @@ class StripeConnector(PaymentProcesor):
             stripe.api_key = self.live_secret_key
         else:
             stripe.api_key = self.test_secret_key
-        customer = stripe.Account.retrieve(**account_payload)
-
-        return customer
+        return stripe.Account.retrieve(**account_payload)
 
     def import_customers(self, organization):
         """
@@ -931,12 +912,11 @@ class StripeConnector(PaymentProcesor):
                 stripe_email = stripe_customer.email
                 stripe_name = stripe_customer.name
                 stripe_name = stripe_name if stripe_name else "no_stripe_name"
-                customer = Customer.objects.filter(
+                if customer := Customer.objects.filter(
                     Q(stripe_integration__stripe_customer_id=stripe_id)
                     | (Q(email=stripe_email) & Q(email__isnull=False)),
                     organization=organization,
-                ).first()
-                if customer:  # customer exists in system already
+                ).first():
                     customer.payment_provider = PAYMENT_PROCESSORS.STRIPE
                     customer.save()
                 else:
@@ -1036,7 +1016,6 @@ class StripeConnector(PaymentProcesor):
                 customer.save()
             except Exception as e:
                 logger.error("Ran into exception:", e)
-                pass
 
     def create_payment_object(self, invoice) -> Tuple[Optional[str], Optional[str]]:
         from metering_billing.models import Organization
@@ -1055,9 +1034,7 @@ class StripeConnector(PaymentProcesor):
         invoice_kwargs = {
             "auto_advance": True,
             "customer": stripe_customer_id,
-            "description": "Invoice from {}".format(
-                customer.organization.organization_name
-            ),
+            "description": f"Invoice from {customer.organization.organization_name}",
             "currency": invoice.currency.code.lower(),
         }
         if not self.self_hosted:
@@ -1068,6 +1045,7 @@ class StripeConnector(PaymentProcesor):
             invoice_kwargs["stripe_account"] = org_stripe_acct
 
         stripe_invoice = stripe.Invoice.create(**invoice_kwargs)
+        tax_behavior = "inclusive"
         for line_item in invoice.line_items.all().order_by(
             F("associated_subscription_record").desc(nulls_last=True)
         ):
@@ -1078,7 +1056,6 @@ class StripeConnector(PaymentProcesor):
                 "start": int(line_item.start_date.timestamp()),
                 "end": int(line_item.end_date.timestamp()),
             }
-            tax_behavior = "inclusive"
             sr = line_item.associated_subscription_record
             metadata = {}
             if sr is not None:
@@ -1198,10 +1175,7 @@ class StripeConnector(PaymentProcesor):
                 plan_dict[plan_obj["id"]] = set()
             plan_dict[plan_obj["id"]].add(plan_obj["external_id"])
 
-        lotus_plans = [
-            (plan_id, external_plan_ids)
-            for plan_id, external_plan_ids in plan_dict.items()
-        ]
+        lotus_plans = list(plan_dict.items())
         ret_subs = []
         for i, subscription in enumerate(stripe_subscriptions.auto_paging_iter()):
             if (
@@ -1221,9 +1195,8 @@ class StripeConnector(PaymentProcesor):
             }
             matching_plans = list(filter(lambda x: x[1] & item_ids, lotus_plans))
             # if no plans match any of the items, don't transfer
-            if len(matching_plans) == 0:
+            if not matching_plans:
                 continue
-            # great, in this case we transfer the subscription
             elif len(matching_plans) == 1:
                 billing_plan = Plan.objects.get(
                     id=matching_plans[0][0]
@@ -1265,13 +1238,9 @@ class StripeConnector(PaymentProcesor):
                     quantity=1,
                 )
             else:  # error if multiple plans match
-                err_msg = "Multiple Lotus plans match Stripe subscription {}.".format(
-                    subscription
-                )
+                err_msg = f"Multiple Lotus plans match Stripe subscription {subscription}."
                 for plan_id, linked_ids in matching_plans:
-                    err_msg += "Plan {} matches items {}".format(
-                        plan_id, item_ids.intersection(linked_ids)
-                    )
+                    err_msg += f"Plan {plan_id} matches items {item_ids.intersection(linked_ids)}"
                 raise ValueError(err_msg)
         return ret_subs
 
@@ -1409,12 +1378,9 @@ except Exception as e:
     print("ERROR: ", e)
     logger.error(e)
     sentry_sdk.capture_exception(e)
-    pass
 try:
     PAYMENT_PROCESSOR_MAP[PAYMENT_PROCESSORS.BRAINTREE] = BraintreeConnector()
 except Exception as e:
     print("ERROR: ", e)
     logger.error(e)
     sentry_sdk.capture_exception(e)
-    pass
-    pass

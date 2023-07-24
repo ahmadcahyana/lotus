@@ -61,12 +61,7 @@ FONT_FAMILY_BOLD = "Alliance Bold"
 
 def transform_date(date):
     """Transforms a datetime date into the correct format"""
-    if type(date) == str:
-        return date
-
-    formatted_string = date.strftime("%d/%m/%Y")
-
-    return formatted_string
+    return date if type(date) == str else date.strftime("%d/%m/%Y")
 
 
 class InvoicePDF:
@@ -89,18 +84,12 @@ class InvoicePDF:
         if not string:
             return ""
 
-        if len(string) > length:
-            return string[:length] + "..."
-
-        return string
+        return f"{string[:length]}..." if len(string) > length else string
 
     def floor_string(self, string):
         """Like floor() in math, but for strings... sorta"""
 
-        if string:
-            return string
-
-        return ""
+        return string if string else ""
 
     def draw_image(self):
         """Draws the logo image to the PDF"""
@@ -185,13 +174,13 @@ class InvoicePDF:
         words = name.split()
         line = ""
         for word in words:
-            w = self.PDF.stringWidth(line + " " + word)
+            w = self.PDF.stringWidth(f"{line} {word}")
             if w > 100:
                 self.PDF.drawString(100, offset, line)
                 offset += 11
-                line = " " + word
+                line = f" {word}"
             else:
-                line += " " + word
+                line += f" {word}"
         self.PDF.drawString(100, offset, line)
 
         if start_date == end_date:
@@ -207,12 +196,12 @@ class InvoicePDF:
 
         if quantity is not None:
             new_quantity = "{:g}".format(float(quantity))
-            self.PDF.drawString(350, offset, str(new_quantity))
+            self.PDF.drawString(350, offset, new_quantity)
         else:
             self.PDF.drawString(350, offset, "")
         if amount:
             new_amount = "{:g}".format(float(amount))
-            self.PDF.drawString(412.5, offset, f"{currency_symbol}{str(new_amount)}")
+            self.PDF.drawString(412.5, offset, f"{currency_symbol}{new_amount}")
         else:
             self.PDF.drawString(412.5, offset, f"{currency_symbol}{str(amount)}")
 
@@ -413,8 +402,6 @@ class InvoicePDF:
 
         if subscription_records:
             self.add_summary_header()
-            pass
-
         grouped_line_items = self.get_grouped_line_items()
 
         line_item_start_y = 312
@@ -555,8 +542,7 @@ def get_invoice_pdf_key(invoice):
     organization_id = invoice.organization.organization_id.hex
     customer_id = invoice.customer.customer_id
     invoice_number = invoice.invoice_number
-    key = f"{organization_id}/{customer_id}/invoice_pdf_{invoice_number}.pdf"
-    return key
+    return f"{organization_id}/{customer_id}/invoice_pdf_{invoice_number}.pdf"
 
 
 def s3_file_exists(bucket_name, key):
@@ -620,7 +606,7 @@ def get_invoice_presigned_url(invoice):
     if not prod:
         team_id = invoice.organization.team.team_id.hex
         team = invoice.organization.team
-        team_id = team.team_id.hex + "-" + slugify(team.name)
+        team_id = f"{team.team_id.hex}-{slugify(team.name)}"
         key = f"{team_id}/{key}"
 
     if (

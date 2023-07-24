@@ -24,12 +24,12 @@ class Command(BaseCommand):
         if size is None:
             size = "small"
         elif size not in ("small", "large"):
-            raise ValueError("Invalid size: %s" % size)
+            raise ValueError(f"Invalid size: {size}")
         name = options.get("name") or "demo"
         setup_database_demo(
             organization_name=name,
             username=name,
-            email=name + "@demo.com",
+            email=f"{name}@demo.com",
             password=name,
             size=size,
             org_type=Organization.OrganizationType.INTERNAL_DEMO,

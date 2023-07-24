@@ -18,19 +18,16 @@ STRIPE_WEBHOOK_SECRET = settings.STRIPE_WEBHOOK_SECRET
 STRIPE_TEST_SECRET_KEY = settings.STRIPE_TEST_SECRET_KEY
 STRIPE_LIVE_SECRET_KEY = settings.STRIPE_LIVE_SECRET_KEY
 USE_KAFKA = settings.USE_KAFKA
-if USE_KAFKA:
-    kafka_producer = Producer()
-else:
-    kafka_producer = None
+kafka_producer = Producer() if USE_KAFKA else None
 
 
 def _invoice_paid_handler(event):
     invoice = event["data"]["object"]
     id = invoice.id
-    matching_invoice = Invoice.objects.filter(
-        external_payment_obj_type=PAYMENT_PROCESSORS.STRIPE, external_payment_obj_id=id
-    ).first()
-    if matching_invoice:
+    if matching_invoice := Invoice.objects.filter(
+        external_payment_obj_type=PAYMENT_PROCESSORS.STRIPE,
+        external_payment_obj_id=id,
+    ).first():
         matching_invoice.payment_status = Invoice.PaymentStatus.PAID
         matching_invoice.save()
         if kafka_producer:
@@ -44,10 +41,10 @@ def _invoice_paid_handler(event):
 def _invoice_updated_handler(event):
     invoice = event["data"]["object"]
     id = invoice.id
-    matching_invoice = Invoice.objects.filter(
-        external_payment_obj_type=PAYMENT_PROCESSORS.STRIPE, external_payment_obj_id=id
-    ).first()
-    if matching_invoice:
+    if matching_invoice := Invoice.objects.filter(
+        external_payment_obj_type=PAYMENT_PROCESSORS.STRIPE,
+        external_payment_obj_id=id,
+    ).first():
         matching_invoice.external_payment_obj_status = invoice.status
         matching_invoice.save()
 

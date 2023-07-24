@@ -21,24 +21,22 @@ class OrganizationInsertMiddleware:
                 api_key = api_key_checker.get_key(request)
                 if api_key is None:
                     organization = None
+                elif organization_pk := cache.get(api_key):
+                    organization = Organization.objects.get(pk=organization_pk)
                 else:
-                    organization_pk = cache.get(api_key)
-                    if not organization_pk:
-                        try:
-                            api_token = APIToken.objects.get_from_key(api_key)
-                            organization = api_token.organization
-                            organization_pk = api_token.organization.pk
-                            expiry_date = api_token.expiry_date
-                            timeout = (
-                                60 * 60 * 24
-                                if expiry_date is None
-                                else (expiry_date - now_utc()).total_seconds()
-                            )
-                            cache.set(api_key, organization_pk, timeout)
-                        except Exception:
-                            organization = None
-                    else:
-                        organization = Organization.objects.get(pk=organization_pk)
+                    try:
+                        api_token = APIToken.objects.get_from_key(api_key)
+                        organization = api_token.organization
+                        organization_pk = api_token.organization.pk
+                        expiry_date = api_token.expiry_date
+                        timeout = (
+                            60 * 60 * 24
+                            if expiry_date is None
+                            else (expiry_date - now_utc()).total_seconds()
+                        )
+                        cache.set(api_key, organization_pk, timeout)
+                    except Exception:
+                        organization = None
             logger.debug(
                 f"OrganizationInsertMiddleware: {organization}, {request.user}"
             )
@@ -46,9 +44,4 @@ class OrganizationInsertMiddleware:
         except Exception as e:
             logger.error(f"OrganizationInsertMiddleware: {e}")
             request.organization = None
-            pass
-        # Code to be executed for each request before
-        # the view (and later middleware) are called.
-        response = self.get_response(request)
-
-        return response
+        return self.get_response(request)

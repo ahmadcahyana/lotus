@@ -260,9 +260,7 @@ class APITokenViewSet(
         except Exception as e:
             logger.error("Error deleting cache using delete pattern")
             sentry_sdk.capture_exception(e)
-            keys_to_delete = []
-            for key in cache.keys(f"{instance.prefix}*"):
-                keys_to_delete.append(key)
+            keys_to_delete = list(cache.keys(f"{instance.prefix}*"))
             cache.delete_many(keys_to_delete)
         return super().perform_destroy(instance)
 
@@ -447,11 +445,9 @@ class WebhookViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
             posthog.capture(
                 POSTHOG_PERSON
                 if POSTHOG_PERSON
-                else (
-                    username
-                    if username
-                    else organization.organization_name + " (API Key)"
-                ),
+                else username
+                if username
+                else f"{organization.organization_name} (API Key)",
                 event=f"{self.action}_webhook",
                 properties={"organization": organization.organization_name},
             )
@@ -702,11 +698,9 @@ class MetricViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
             posthog.capture(
                 POSTHOG_PERSON
                 if POSTHOG_PERSON
-                else (
-                    username
-                    if username
-                    else organization.organization_name + " (API Key)"
-                ),
+                else username
+                if username
+                else f"{organization.organization_name} (API Key)",
                 event=f"{self.action}_metric",
                 properties={"organization": organization.organization_name},
             )
@@ -722,8 +716,7 @@ class MetricViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         try:
-            instance = serializer.save(organization=self.request.organization)
-            return instance
+            return serializer.save(organization=self.request.organization)
         except IntegrityError as e:
             cause = e.__cause__
             if "unique_org_billable_metric_name" in str(cause):
@@ -757,8 +750,7 @@ class FeatureViewSet(
 
     def get_queryset(self):
         organization = self.request.organization
-        objs = Feature.objects.filter(organization=organization)
-        return objs
+        return Feature.objects.filter(organization=organization)
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -777,11 +769,9 @@ class FeatureViewSet(
             posthog.capture(
                 POSTHOG_PERSON
                 if POSTHOG_PERSON
-                else (
-                    username
-                    if username
-                    else organization.organization_name + " (API Key)"
-                ),
+                else username
+                if username
+                else f"{organization.organization_name} (API Key)",
                 event=f"{self.action}_feature",
                 properties={"organization": organization.organization_name},
             )
@@ -825,10 +815,7 @@ class PlanVersionViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
             return PlanVersionUpdateSerializer
         elif self.action == "create":
             return PlanVersionCreateSerializer
-        elif (
-            self.action == "add_target_customer"
-            or self.action == "remove_target_customer"
-        ):
+        elif self.action in ["add_target_customer", "remove_target_customer"]:
             return TargetCustomersSerializer
         elif self.action == "set_replacement":
             return SetReplaceWithSerializer
@@ -840,18 +827,14 @@ class PlanVersionViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         organization = self.request.organization
-        qs = PlanVersion.plan_versions.filter(
+        return PlanVersion.plan_versions.filter(
             organization=organization,
         )
-        return qs
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
         organization = self.request.organization
-        if self.request.user.is_authenticated:
-            user = self.request.user
-        else:
-            user = None
+        user = self.request.user if self.request.user.is_authenticated else None
         context.update({"organization": organization, "user": user})
         return context
 
@@ -866,11 +849,9 @@ class PlanVersionViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
             posthog.capture(
                 POSTHOG_PERSON
                 if POSTHOG_PERSON
-                else (
-                    username
-                    if username
-                    else organization.organization_name + " (API Key)"
-                ),
+                else username
+                if username
+                else f"{organization.organization_name} (API Key)",
                 event=f"{self.action}_plan_version",
                 properties={"organization": organization.organization_name},
             )
@@ -901,21 +882,10 @@ class PlanVersionViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
         )
 
     def perform_create(self, serializer):
-        if self.request.user.is_authenticated:
-            user = self.request.user
-        else:
-            user = None
-        instance = serializer.save(
+        user = self.request.user if self.request.user.is_authenticated else None
+        return serializer.save(
             organization=self.request.organization, created_by=user
         )
-        # if user:
-        #     action.send(
-        #         user,
-        #         verb="created",
-        #         action_object=instance,
-        #         target=instance.plan,
-        #     )
-        return instance
 
     @extend_schema(
         request=TargetCustomersSerializer,
@@ -1257,18 +1227,14 @@ class PlanViewSet(api_views.PlanViewSet):
         return super().get_object()
 
     def get_queryset(self):
-        qs = super().get_queryset()
-        return qs
+        return super().get_queryset()
 
     def get_serializer_class(self):
         if self.action == "partial_update":
             return PlanUpdateSerializer
         elif self.action == "create":
             return PlanCreateSerializer
-        elif (
-            self.action == "add_feature"
-            or self.action == "add_feature_to_version_number"
-        ):
+        elif self.action in ["add_feature", "add_feature_to_version_number"]:
             return AddFeatureToPlanSerializer
         elif self.action == "change_version_number_active_dates":
             return ChangeActiveDatesSerializer
@@ -1303,14 +1269,10 @@ class PlanViewSet(api_views.PlanViewSet):
         )
 
     def perform_create(self, serializer):
-        if self.request.user.is_authenticated:
-            user = self.request.user
-        else:
-            user = None
-        instance = serializer.save(
+        user = self.request.user if self.request.user.is_authenticated else None
+        return serializer.save(
             organization=self.request.organization, created_by=user
         )
-        return instance
 
     @extend_schema(
         parameters=None,
@@ -1833,8 +1795,7 @@ class InvoiceViewSet(api_views.InvoiceViewSet):
         invoice = self.get_object()
         customer = invoice.customer
         if customer.payment_provider and invoice.external_payment_obj_type is None:
-            connector = PAYMENT_PROCESSOR_MAP.get(customer.payment_provider)
-            if connector:
+            if connector := PAYMENT_PROCESSOR_MAP.get(customer.payment_provider):
                 external_id, external_status = connector.create_payment_object(invoice)
                 if external_id:
                     invoice.external_payment_obj_id = external_id
@@ -1892,11 +1853,9 @@ class BacktestViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
             posthog.capture(
                 POSTHOG_PERSON
                 if POSTHOG_PERSON
-                else (
-                    username
-                    if username
-                    else organization.organization_name + " (API Key)"
-                ),
+                else username
+                if username
+                else f"{organization.organization_name} (API Key)",
                 event=f"{self.action}_backtest",
                 properties={"organization": organization.organization_name},
             )
@@ -1956,11 +1915,9 @@ class AnalysisViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
             posthog.capture(
                 POSTHOG_PERSON
                 if POSTHOG_PERSON
-                else (
-                    username
-                    if username
-                    else organization.organization_name + " (API Key)"
-                ),
+                else username
+                if username
+                else f"{organization.organization_name} (API Key)",
                 event=f"{self.action}_analysis",
                 properties={"organization": organization.organization_name},
             )
@@ -2001,11 +1958,9 @@ class ProductViewSet(viewsets.ModelViewSet):
             posthog.capture(
                 POSTHOG_PERSON
                 if POSTHOG_PERSON
-                else (
-                    username
-                    if username
-                    else organization.organization_name + " (API Key)"
-                ),
+                else username
+                if username
+                else f"{organization.organization_name} (API Key)",
                 event=f"{self.action}_product",
                 properties={"organization": organization.organization_name},
             )
@@ -2060,8 +2015,7 @@ class ExternalPlanLinkViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         filter_kwargs = {"organization": self.request.organization}
-        source = self.request.query_params.get("source")
-        if source:
+        if source := self.request.query_params.get("source"):
             filter_kwargs["source"] = source
         return ExternalPlanLink.objects.filter(**filter_kwargs)
 
@@ -2076,11 +2030,9 @@ class ExternalPlanLinkViewSet(viewsets.ModelViewSet):
             posthog.capture(
                 POSTHOG_PERSON
                 if POSTHOG_PERSON
-                else (
-                    username
-                    if username
-                    else organization.organization_name + " (API Key)"
-                ),
+                else username
+                if username
+                else f"{organization.organization_name} (API Key)",
                 event=f"{self.action}_external_plan_link",
                 properties={"organization": organization.organization_name},
             )
@@ -2272,14 +2224,10 @@ class AddOnViewSet(viewsets.ModelViewSet):
         return AddOnDetailSerializer
 
     def perform_create(self, serializer):
-        if self.request.user.is_authenticated:
-            user = self.request.user
-        else:
-            user = None
-        instance = serializer.save(
+        user = self.request.user if self.request.user.is_authenticated else None
+        return serializer.save(
             organization=self.request.organization, created_by=user
         )
-        return instance
 
     def get_queryset(self):
         filter_kwargs = {"organization": self.request.organization}
@@ -2406,18 +2354,14 @@ class AddOnVersionViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         organization = self.request.organization
-        qs = PlanVersion.plan_versions.filter(
+        return PlanVersion.plan_versions.filter(
             organization=organization,
         )
-        return qs
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
         organization = self.request.organization
-        if self.request.user.is_authenticated:
-            user = self.request.user
-        else:
-            user = None
+        user = self.request.user if self.request.user.is_authenticated else None
         context.update({"organization": organization, "user": user})
         return context
 
@@ -2432,11 +2376,9 @@ class AddOnVersionViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
             posthog.capture(
                 POSTHOG_PERSON
                 if POSTHOG_PERSON
-                else (
-                    username
-                    if username
-                    else organization.organization_name + " (API Key)"
-                ),
+                else username
+                if username
+                else f"{organization.organization_name} (API Key)",
                 event=f"{self.action}_plan_version",
                 properties={"organization": organization.organization_name},
             )
@@ -2469,21 +2411,10 @@ class AddOnVersionViewSet(PermissionPolicyMixin, viewsets.ModelViewSet):
         )
 
     def perform_create(self, serializer):
-        if self.request.user.is_authenticated:
-            user = self.request.user
-        else:
-            user = None
-        instance = serializer.save(
+        user = self.request.user if self.request.user.is_authenticated else None
+        return serializer.save(
             organization=self.request.organization, created_by=user
         )
-        # if user:
-        #     action.send(
-        #         user,
-        #         verb="created",
-        #         action_object=instance,
-        #         target=instance.plan,
-        #     )
-        return instance
 
     @extend_schema(
         parameters=None,
@@ -2553,5 +2484,4 @@ class UsageAlertViewSet(viewsets.ModelViewSet):
         context = super().get_serializer_context()
         organization = self.request.organization
         context.update({"organization": organization})
-        return context
         return context

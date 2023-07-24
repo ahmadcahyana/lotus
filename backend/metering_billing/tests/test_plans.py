@@ -147,7 +147,7 @@ class TestPlanOperations:
         )
         plan = Plan.objects.get(plan_id=response.data["plan_id"].replace("plan_", ""))
         tags_before = set(plan.tags.values("tag_name"))
-        assert len(tags_before) == 0
+        assert not tags_before
 
         tags_payload = {"tags": [{"tag_name": "test_tag"}, {"tag_name": "test_tag_2"}]}
         response = setup_dict["client"].post(
@@ -172,7 +172,7 @@ class TestPlanOperations:
         )
         plan = Plan.objects.get(plan_id=response.data["plan_id"].replace("plan_", ""))
         tags_before = set(plan.tags.values_list("tag_name", flat=True))
-        assert len(tags_before) == 0
+        assert not tags_before
 
         tags_payload = {"tags": [{"tag_name": "test_tag"}, {"tag_name": "TEST_tag"}]}
         response = setup_dict["client"].post(

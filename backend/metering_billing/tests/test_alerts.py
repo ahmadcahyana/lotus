@@ -34,8 +34,8 @@ def alerts_test_common_setup(
     add_plan_to_product,
 ):
     def do_alerts_test_common_setup(
-        *, num_subscriptions, auth_method, user_org_and_api_key_org_different=False
-    ):
+            *, num_subscriptions, auth_method, user_org_and_api_key_org_different=False
+        ):
         # set up organizations and api keys
         org, key = generate_org_and_api_key()
         org2, key2 = generate_org_and_api_key()
@@ -117,7 +117,7 @@ def alerts_test_common_setup(
                 org, billing_plan, customer
             )
         payload = {
-            "metric_id": "metric_" + metric_set[0].metric_id.hex,
+            "metric_id": f"metric_{metric_set[0].metric_id.hex}",
             "plan_version_id": billing_plan.version_id.hex,
             "threshold": 50,
         }

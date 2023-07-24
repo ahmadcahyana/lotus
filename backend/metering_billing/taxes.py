@@ -12,14 +12,10 @@ logger = logging.getLogger("django.server")
 
 
 def get_lotus_tax_rates(customer, organization) -> Tuple[Decimal, bool]:
-    # Check customer tax rate first
-    customer_tax_rate = customer.tax_rate
-    if customer_tax_rate:
+    if customer_tax_rate := customer.tax_rate:
         return customer_tax_rate, True
 
-    # Otherwise, check organization tax rate
-    organization_tax_rate = organization.tax_rate
-    if organization_tax_rate:
+    if organization_tax_rate := organization.tax_rate:
         return organization_tax_rate, True
 
     # If no tax rate found, return unsuccessful
